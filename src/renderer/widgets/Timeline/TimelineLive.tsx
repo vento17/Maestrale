@@ -1,8 +1,12 @@
+import { pal, palRgb, onPalette } from '../../palette';
+import { masterOut } from '../../audio/audioMaster';
 import React, { useState, useRef, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { createPortal } from 'react-dom';
 import { nanoid } from 'nanoid';
 import type {
   TimelineWidget, TimelineTrack,
-  ValueTrack, ColorTrack, SoundTrack, TrigTrack, CueTrack, CueRegion, WaitTrack, WaitPoint,
+  ValueTrack, ColorTrack, ColorOscFormat, SoundTrack, TrigTrack, CueTrack, CueRegion, WaitTrack, WaitPoint,
   ValueKeyframe, ColorKeyframe, TrigMarker, TimelineMarker,
   TimelineEasing, LtcAudioConnection, SoundRegion, AudioOutputConnection,
 } from '../../../shared/types/project';
@@ -13,6 +17,8 @@ import { dispatchValue } from '../../ipc/dispatch';
 import { bridge } from '../../ipc/bridge';
 import { timelineTrigCells, timelineCueCells } from '../utils';
 import NumberInput from '../base/NumberInput';
+import CellLinkMenu from '../base/CellLinkMenu';
+import { onTimelineCommand, TIMELINE_TRANSPORT } from './transport';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 const TRACK_H  = 56;
@@ -178,15 +184,17 @@ const TRACK_KIND_LABEL: Record<string, string> = {
 };
 function trackColor(t: TimelineTrack): string {
   if (t.kind === 'value') return (t as ValueTrack).color;
-  if (t.kind === 'color') return '#c8a040';
+  if (t.kind === 'color') return pal('#da7e2e');
   if (t.kind === 'trig')  return (t as TrigTrack).color;
   if (t.kind === 'wait')  return (t as WaitTrack).color;
-  if (t.kind === 'cue')   return (t as CueTrack).cues[0]?.color ?? '#4a9fdf';
-  return '#4a9f6a';
+  if (t.kind === 'cue')   return (t as CueTrack).cues[0]?.color ?? pal('#68bbc1');
+  return pal('#4a999f');
 }
 
 // Cue blocks cycle through these so consecutive blocks never look alike.
-const CUE_COLORS = ['#4a9fdf', '#5fbf7f', '#d0b040', '#c060c0', '#e08040', '#40b8b8'];
+const make_CUE_COLORS = () => ([pal('#68bbc1'), pal('#60b8be'), pal('#db8235'), pal('#de8b42'), pal('#e08b40'), pal('#48a9b0')]);
+let CUE_COLORS = make_CUE_COLORS();
+onPalette(() => { CUE_COLORS = make_CUE_COLORS(); });
 
 // Which cue block contains tNorm: the last block that starts at or before it.
 function activeCueIndex(cues: CueRegion[], tNorm: number): number {
@@ -389,9 +397,9 @@ function TrackRow({ track, isSelected, selectedKfId, tNorm, wf, wfLoading, toolM
   const trigMarkers: TrigMarker[] = track.kind === 'trig' ? (track as TrigTrack).keyframes : [];
 
   const trackAccent = track.kind === 'value' ? (track as ValueTrack).color
-    : track.kind === 'color' ? '#c8a040'
+    : track.kind === 'color' ? pal('#da7e2e')
     : track.kind === 'trig'  ? (track as TrigTrack).color
-    : '#4a9f6a';
+    : pal('#4a999f');
 
   const sndTrack  = track.kind === 'sound' ? (track as SoundTrack) : null;
   const sndRegions = sndTrack ? getSoundRegions(sndTrack) : [];
@@ -406,7 +414,7 @@ function TrackRow({ track, isSelected, selectedKfId, tNorm, wf, wfLoading, toolM
       style={{
         height: trackHeight, position: 'relative', boxSizing: 'border-box',
         borderBottom: '1px solid #141414',
-        background: isSelected ? '#101820' : '#0a0a0a',
+        background: isSelected ? pal('#101f20') : '#0a0a0a',
         cursor: rowCursor,
         userSelect: 'none',
       }}
@@ -576,7 +584,7 @@ function TrackRow({ track, isSelected, selectedKfId, tNorm, wf, wfLoading, toolM
               <React.Fragment key={reg.id}>
                 {/* Audio region body — overflow:hidden clips the natural-scale waveform canvas */}
                 <div
-                  style={{ position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`, background: '#0a1218', cursor: toolMode === 'cut' ? 'crosshair' : 'grab', zIndex: 1, overflow: 'hidden' }}
+                  style={{ position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`, background: pal('#0b1617'), cursor: toolMode === 'cut' ? 'crosshair' : 'grab', zIndex: 1, overflow: 'hidden' }}
                   onPointerDown={(e) => { if (toolMode !== 'cut') startRegionDrag(e, 'move', reg); }}
                   onPointerMove={handleRowMove}
                   onPointerUp={handleRowUp}
@@ -750,12 +758,62 @@ function TrackRow({ track, isSelected, selectedKfId, tNorm, wf, wfLoading, toolM
       })}
 
       {/* Playhead highlight */}
-      <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: 'rgba(255,120,40,0.3)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: `rgba(${palRgb('#ff8c28')},0.3)`, pointerEvents: 'none' }} />
     </div>
   );
 }
 
 // ─── Compact mapping editor (OSC / MIDI / off) ────────────────────────────────
+
+// Colour track → OSC, in the format chosen in its settings. RGBW takes the
+// white out of the three (w = min(r, g, b)), the usual way for RGBW fixtures.
+function sendColorOsc(track: ColorTrack, rgb: [number, number, number] | number[]): void {
+  const [r, g, b] = rgb as [number, number, number];
+  const fmt = track.oscFormat ?? 'rgb';
+  const withW = fmt === 'rgbw' || fmt === 'rgbw-split';
+  const w = withW ? Math.min(r, g, b) : 0;
+  const vals = withW ? [r - w, g - w, b - w, w] : [r, g, b];
+  const addr = track.oscAddress.replace(/\/+$/, '');
+  if (fmt === 'rgb-split' || fmt === 'rgbw-split') {
+    const names = ['r', 'g', 'b', 'w'];
+    vals.forEach((v, i) => bridge.send('tr:osc:send', { address: `${addr}/${names[i]}`, args: [{ type: 'f', value: v }] }));
+  } else {
+    bridge.send('tr:osc:send', { address: addr, args: vals.map((v) => ({ type: 'f' as const, value: v })) });
+  }
+}
+
+const COLOR_FORMATS: { value: ColorOscFormat; label: string; hint: string }[] = [
+  { value: 'rgb',        label: 'RGB',     hint: 'one message: /addr r g b' },
+  { value: 'rgbw',       label: 'RGBW',    hint: 'one message: /addr r g b w (white taken out of the three)' },
+  { value: 'rgb-split',  label: 'R·G·B',   hint: 'separate: /addr/r  /addr/g  /addr/b' },
+  { value: 'rgbw-split', label: 'R·G·B·W', hint: 'separate: /addr/r  /addr/g  /addr/b  /addr/w' },
+];
+
+function ColorOscSettings({ track, onChange, sec, lbl, inp }: {
+  track: ColorTrack; onChange: (p: Partial<ColorTrack>) => void;
+  sec: React.CSSProperties; lbl: React.CSSProperties; inp: React.CSSProperties;
+}) {
+  const fmt = track.oscFormat ?? 'rgb';
+  const cur = COLOR_FORMATS.find((f) => f.value === fmt)!;
+  return (
+    <div style={sec}>
+      <div style={lbl}>OSC address</div>
+      <input style={inp} value={track.oscAddress} onChange={(e) => onChange({ oscAddress: e.target.value })} placeholder="/color" />
+      <div style={{ ...lbl, marginTop: 6 }}>Send as</div>
+      <div style={{ display: 'flex', gap: 2 }}>
+        {COLOR_FORMATS.map((f) => (
+          <button key={f.value} title={f.hint} onClick={() => onChange({ oscFormat: f.value })}
+            style={{
+              flex: 1, padding: '3px 0', fontSize: 9, cursor: 'pointer', borderRadius: 2, fontFamily: 'inherit',
+              background: fmt === f.value ? pal('#2b6569') : '#111', color: fmt === f.value ? '#fff' : '#777',
+              border: `1px solid ${fmt === f.value ? pal('#4aa4aa') : '#1e1e1e'}`,
+            }}>{f.label}</button>
+        ))}
+      </div>
+      <div style={{ fontSize: 9, color: '#555', marginTop: 3 }}>{cur.hint.replace(/\/addr/g, (track.oscAddress || '/color').replace(/\/+$/, ''))}</div>
+    </div>
+  );
+}
 
 function MiniMap({ label, mapping, onChange }: { label: string; mapping: Mapping; onChange: (m: Mapping) => void }) {
   const inp: React.CSSProperties = { flex: 1, background: '#111', border: '1px solid #1e1e1e', color: '#aaa', borderRadius: 2, padding: '2px 4px', fontSize: 10, boxSizing: 'border-box', minWidth: 0 };
@@ -830,7 +888,7 @@ function MiniMap({ label, mapping, onChange }: { label: string; mapping: Mapping
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TimelineLive({ widget }: { widget: TimelineWidget }): React.JSX.Element {
-  const { updateWidget, activePageId, project } = useStore((s) => ({ updateWidget: s.updateWidget, activePageId: s.activePageId, project: s.project }));
+  const { updateWidget, activePageId, project } = useStore(useShallow((s) => ({ updateWidget: s.updateWidget, activePageId: s.activePageId, project: s.project })));
 
   const [isPlaying,   setIsPlaying]   = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -1221,7 +1279,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
         const gain = ctx.createGain();
         src.buffer      = buf;
         gain.gain.value = t.volume;
-        src.connect(gain).connect(ctx.destination);
+        src.connect(gain).connect(masterOut(ctx));
         src.start(0, audioPos);
         aSources.current.set(`${t.id}_${ri}`, src);
       });
@@ -1301,8 +1359,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
           if (track.mapping) dispatchValue(track.mapping, val);
           useStore.getState().setCellValue(w.id, ti, val);
         } else if (track.kind === 'color' && track.oscAddress) {
-          const [r, g, b] = hexToRgb(getColorAt(tN, track.keyframes));
-          bridge.send('tr:osc:send', { address: track.oscAddress, args: [{ type: 'f', value: r }, { type: 'f', value: g }, { type: 'f', value: b }] });
+          sendColorOsc(track, hexToRgb(getColorAt(tN, track.keyframes)));
         } else if (track.kind === 'trig') {
           const trigCells = timelineTrigCells(w);
           track.keyframes.forEach((marker, mi) => {
@@ -1402,6 +1459,50 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
   function goToStart() { stopPlayback(); setCurrentTime(0); }
   function goToEnd()   { stopPlayback(); setCurrentTime(widget.duration); }
 
+  // BACK: stop and park on the wait point before the one we are at (or before
+  // the playhead), so the next GO replays that section. No earlier wait → top.
+  // Bypassed points count, like Shift+Arrow: they are still landmarks.
+  function backToPreviousWait() {
+    const w = widgetRef.current;
+    stopPbRef.current();
+    const eps = 1e-4;
+    const cur = waitingRef.current?.time ?? tNormRef.current;
+    let best: { trackId: string; pointId: string; time: number } | null = null;
+    for (const t of w.tracks) {
+      if (t.kind !== 'wait') continue;
+      for (const p of (t as WaitTrack).points) {
+        if (p.time < cur - eps && (!best || p.time > best.time)) best = { trackId: t.id, pointId: p.id, time: p.time };
+      }
+    }
+    const target = best?.time ?? 0;
+    tNormRef.current = target;
+    prevTNormRef.current = target;
+    setCurrentTime(target * w.duration);
+    syncCuesRef.current(target);
+    waitingRef.current = best;
+    setWaitingAt(best);
+  }
+  const backRef = useRef(backToPreviousWait); backRef.current = backToPreviousWait;
+
+  // Remote transport (GO / STOP / BACK) arrives through the Router: any MIDI,
+  // OSC, Art-Net or widget source patched onto this timeline's transport inputs.
+  // GO while already playing is ignored on purpose — a double GO in a show must
+  // never skip a cue.
+  useEffect(() => onTimelineCommand(widget.id, (cmd) => {
+    if (cmd === 'go')   { if (!isPlayingRef.current) startPbRef.current(); return; }
+    if (cmd === 'stop') { stopPbRef.current(); return; }
+    if (cmd === 'back') backRef.current();
+  }), [widget.id]);
+
+  // Right-click on ▶ → pick GO / STOP / BACK, then the usual link/learn menu.
+  const [transportMenu, setTransportMenu] = useState<{ x: number; y: number; cell: number | null } | null>(null);
+  useEffect(() => {
+    if (!transportMenu) return;
+    const close = () => setTransportMenu(null);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [transportMenu]);
+
   // ─── Ruler scrub ───────────────────────────────────────────────────────────
 
   function scrubTo(clientX: number) {
@@ -1432,14 +1533,14 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
     setShowAddMenu(false);
     const n = widget.tracks.filter((t) => t.kind === kind).length + 1;
     let t: TimelineTrack;
-    if (kind === 'value')       t = { id: nanoid(), kind: 'value', label: `Value ${n}`, color: '#4a9fdf', keyframes: [], mapping: null } satisfies ValueTrack;
+    if (kind === 'value')       t = { id: nanoid(), kind: 'value', label: `Value ${n}`, color: pal('#68bbc1'), keyframes: [], mapping: null } satisfies ValueTrack;
     else if (kind === 'color')  t = { id: nanoid(), kind: 'color', label: `Color ${n}`, keyframes: [], oscAddress: '/color' } satisfies ColorTrack;
-    else if (kind === 'trig')   t = { id: nanoid(), kind: 'trig',  label: `Trig ${n}`,  color: '#e06040', keyframes: [], mapping: null } satisfies TrigTrack;
+    else if (kind === 'trig')   t = { id: nanoid(), kind: 'trig',  label: `Trig ${n}`,  color: pal('#e08b40'), keyframes: [], mapping: null } satisfies TrigTrack;
     // A cue track is never empty: it always covers the whole timeline, starting
     // as one block that you then cut.
     else if (kind === 'cue')    t = { id: nanoid(), kind: 'cue', label: `Cues ${n}`,
                                       cues: [{ id: nanoid(), time: 0, name: 'Cue 1', color: CUE_COLORS[0], mapping: null }] } satisfies CueTrack;
-    else if (kind === 'wait')   t = { id: nanoid(), kind: 'wait', label: `Wait ${n}`, color: '#d0b040', points: [] } satisfies WaitTrack;
+    else if (kind === 'wait')   t = { id: nanoid(), kind: 'wait', label: `Wait ${n}`, color: pal('#db8235'), points: [] } satisfies WaitTrack;
     else                        t = { id: nanoid(), kind: 'sound', label: `Sound ${n}`, src: '', fileName: '', volume: 1, offset: 0 } satisfies SoundTrack;
     saveTracks([...widget.tracks, t]);
     setSelTrkId(t.id); setSelKfId(null);
@@ -1586,7 +1687,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
     const time = snapTime(timeRaw);
     let kf: ValueKeyframe | ColorKeyframe | TrigMarker;
     if (track.kind === 'value')      kf = { id: nanoid(), time, value, easing: 'linear' } satisfies ValueKeyframe;
-    else if (track.kind === 'color') kf = { id: nanoid(), time, color: '#ff4080' } satisfies ColorKeyframe;
+    else if (track.kind === 'color') kf = { id: nanoid(), time, color: pal('#ff9940') } satisfies ColorKeyframe;
     else {
       // Stable creation number, never reused, so the marker keeps its identity
       const nextNum = (track as TrigTrack).keyframes.reduce((m, k) => Math.max(m, k.num ?? 0), 0) + 1;
@@ -1842,7 +1943,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
             Draws a line across every track. Triggers and value points snap to it while SNAP is on.
           </div>
           <button onClick={() => deleteMarker(selMarker.id)}
-            style={{ width: '100%', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#c44', borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
+            style={{ width: '100%', background: pal('#1a110a'), border: `1px solid ${pal('#3a291a')}`, color: pal('#db8235'), borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
             Delete marker
           </button>
         </>
@@ -1882,7 +1983,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
             </div>
             {!isFirst && (
               <button onClick={() => deleteCue(selTrack.id, region.id)}
-                style={{ width: '100%', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#c44', borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
+                style={{ width: '100%', background: pal('#1a110a'), border: `1px solid ${pal('#3a291a')}`, color: pal('#db8235'), borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
                 Delete block
               </button>
             )}
@@ -1928,7 +2029,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
               Ctrl+←/→ still jumps to them.
             </div>
             <button onClick={() => deleteWait(selTrack.id, point.id)}
-              style={{ width: '100%', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#c44', borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
+              style={{ width: '100%', background: pal('#1a110a'), border: `1px solid ${pal('#3a291a')}`, color: pal('#db8235'), borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
               Delete wait point
             </button>
           </>
@@ -1954,7 +2055,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
           <MiniMap label="Output mapping" mapping={(selTrack as TrigTrack).mapping}
             onChange={(m) => updateTrack(selTrack.id, { mapping: m } as never)} />
           <button onClick={() => deleteKeyframe(selTrkId!, selTrigMk.id)}
-            style={{ width: '100%', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#c44', borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
+            style={{ width: '100%', background: pal('#1a110a'), border: `1px solid ${pal('#3a291a')}`, color: pal('#db8235'), borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10 }}>
             Delete marker
           </button>
         </>
@@ -2009,7 +2110,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
             </div>
           )}
           <button onClick={() => deleteKeyframe(selTrkId!, selKf.id)}
-            style={{ width: '100%', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#c44', borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10, marginBottom: 10 }}>
+            style={{ width: '100%', background: pal('#1a110a'), border: `1px solid ${pal('#3a291a')}`, color: pal('#db8235'), borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10, marginBottom: 10 }}>
             Delete keyframe
           </button>
           {selTrack.kind === 'value' && (
@@ -2017,12 +2118,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
               onChange={(m) => updateTrack(selTrack.id, { mapping: m } as never)} />
           )}
           {selTrack.kind === 'color' && (
-            <div style={rSec}>
-              <div style={rLbl}>OSC address (r g b)</div>
-              <input style={rInp} value={(selTrack as ColorTrack).oscAddress}
-                onChange={(e) => updateTrack(selTrack.id, { oscAddress: e.target.value })}
-                placeholder="/color" />
-            </div>
+            <ColorOscSettings track={selTrack as ColorTrack} onChange={(p) => updateTrack(selTrack.id, p)} sec={rSec} lbl={rLbl} inp={rInp} />
           )}
         </>
       );
@@ -2051,12 +2147,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
           )}
 
           {selTrack.kind === 'color' && (
-            <div style={rSec}>
-              <div style={rLbl}>OSC address (r g b)</div>
-              <input style={rInp} value={(selTrack as ColorTrack).oscAddress}
-                onChange={(e) => updateTrack(selTrack.id, { oscAddress: e.target.value })}
-                placeholder="/color" />
-            </div>
+            <ColorOscSettings track={selTrack as ColorTrack} onChange={(p) => updateTrack(selTrack.id, p)} sec={rSec} lbl={rLbl} inp={rInp} />
           )}
 
           {selTrack.kind === 'trig' && (
@@ -2120,7 +2211,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
           )}
 
           <button onClick={() => deleteTrack(selTrack.id)}
-            style={{ width: '100%', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#c44', borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10, marginTop: 4 }}>
+            style={{ width: '100%', background: pal('#1a110a'), border: `1px solid ${pal('#3a291a')}`, color: pal('#db8235'), borderRadius: 2, padding: '4px', cursor: 'pointer', fontSize: 10, marginTop: 4 }}>
             Delete track
           </button>
         </>
@@ -2145,7 +2236,12 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
         <button onClick={goToStart} title="Go to start" style={icoBtn}>{'⏮︎'}</button>
         <button
           onClick={() => isPlaying ? stopPlayback() : startPlayback()}
-          title={isPlaying ? 'Stop' : 'Play'}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setTransportMenu({ x: e.clientX, y: e.clientY, cell: null });
+          }}
+          title={isPlaying ? 'Stop · right-click: remote GO / STOP / BACK' : 'Play · right-click: remote GO / STOP / BACK'}
           style={{ ...icoBtn, fontSize: 22 }}
         >{isPlaying ? '■' : '▶'}</button>
         <button onClick={goToEnd} title="Go to end" style={icoBtn}>{'⏭︎'}</button>
@@ -2277,7 +2373,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
                   style={{
                     height: tH, position: 'relative', display: 'flex', alignItems: 'center', padding: '0 8px', gap: 6,
                     borderBottom: '1px solid #101010', cursor: 'pointer', flexShrink: 0,
-                    background: selTrkId === t.id ? '#101820' : 'transparent',
+                    background: selTrkId === t.id ? pal('#101f20') : 'transparent',
                   }}
                   onClick={() => { setSelTrkId(t.id); setSelKfId(null); }}>
                   <span style={{ fontSize: 10, color: trackColor(t), flexShrink: 0, opacity: t.muted ? 0.35 : 1 }}>
@@ -2287,7 +2383,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
                   <button
                     onClick={(ev) => { ev.stopPropagation(); updateTrack(t.id, { muted: !t.muted }); }}
                     title={t.muted ? 'Unmute' : 'Mute'}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', fontSize: 8, fontWeight: 700, color: t.muted ? '#e06040' : '#282828', flexShrink: 0, lineHeight: 1, fontFamily: 'inherit' }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', fontSize: 8, fontWeight: 700, color: t.muted ? pal('#e08b40') : '#282828', flexShrink: 0, lineHeight: 1, fontFamily: 'inherit' }}
                   >M</button>
                   {/* Vertical resize handle */}
                   <div
@@ -2335,12 +2431,12 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
               position: 'absolute', top: 3, bottom: 3,
               left: `${visStart * 100}%`,
               width: `${Math.max(0.01, visEnd - visStart) * 100}%`,
-              background: '#1e3050', borderRadius: 2,
+              background: pal('#204b4e'), borderRadius: 2,
               display: 'flex', overflow: 'hidden',
             }}>
               {/* Left resize handle — captures pointer so move/up stay on this element */}
               <div
-                style={{ width: 6, height: '100%', cursor: 'ew-resize', background: '#3a5a80', flexShrink: 0 }}
+                style={{ width: 6, height: '100%', cursor: 'ew-resize', background: pal('#3a7b80'), flexShrink: 0 }}
                 onPointerDown={(e) => startIndDrag(e, 'left')}
                 onPointerMove={handleIndicatorMove}
                 onPointerUp={handleIndicatorUp}
@@ -2356,7 +2452,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
               />
               {/* Right resize handle */}
               <div
-                style={{ width: 6, height: '100%', cursor: 'ew-resize', background: '#3a5a80', flexShrink: 0 }}
+                style={{ width: 6, height: '100%', cursor: 'ew-resize', background: pal('#3a7b80'), flexShrink: 0 }}
                 onPointerDown={(e) => startIndDrag(e, 'right')}
                 onPointerMove={handleIndicatorMove}
                 onPointerUp={handleIndicatorUp}
@@ -2364,10 +2460,10 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
               />
             </div>
             {/* Labels */}
-            <div style={{ position: 'absolute', left: `${visStart * 100}%`, top: 4, fontSize: 7, color: '#4a6a8a', transform: 'translateX(8px)', lineHeight: '12px', pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', left: `${visStart * 100}%`, top: 4, fontSize: 7, color: pal('#4a868a'), transform: 'translateX(8px)', lineHeight: '12px', pointerEvents: 'none' }}>
               {Math.round(visStart * 100)}%
             </div>
-            <div style={{ position: 'absolute', left: `${visEnd * 100}%`, top: 4, fontSize: 7, color: '#4a6a8a', transform: 'translateX(calc(-100% - 8px))', lineHeight: '12px', pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', left: `${visEnd * 100}%`, top: 4, fontSize: 7, color: pal('#4a868a'), transform: 'translateX(calc(-100% - 8px))', lineHeight: '12px', pointerEvents: 'none' }}>
               {Math.round(visEnd * 100)}%
             </div>
           </div>
@@ -2398,7 +2494,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
               >
                 {rulerTicks()}
 
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: '#e06020', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: pal('#e07a20'), pointerEvents: 'none' }} />
               </div>
 
 
@@ -2453,7 +2549,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
                     </div>
                   );
                 })}
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: '#e06020', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: pal('#e07a20'), pointerEvents: 'none' }} />
               </div>
 
               {/* Track rows */}
@@ -2489,7 +2585,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
                     pointerEvents: 'none', zIndex: 9,
                   }} />
                 ))}
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: '#e06020', pointerEvents: 'none', zIndex: 10 }} />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${tNorm * 100}%`, width: 1, background: pal('#e07a20'), pointerEvents: 'none', zIndex: 10 }} />
               </div>
             </div>
           </div>
@@ -2504,6 +2600,41 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
           {renderRight()}
         </div>
       </div>
+
+      {/* Portal: a fixed menu inside the scaled Live canvas would be offset and clipped. */}
+      {transportMenu && transportMenu.cell === null && createPortal(
+        <div
+          style={{
+            position: 'fixed', left: transportMenu.x, top: transportMenu.y, zIndex: 9999,
+            background: '#1a1a1a', border: '1px solid #3a3a3a', borderRadius: 6, padding: '6px 0',
+            minWidth: 260, boxShadow: '0 6px 28px rgba(0,0,0,0.75)', fontFamily: 'monospace',
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div style={{ padding: '8px 16px', color: '#8a8a8a', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+            remote transport
+          </div>
+          {TIMELINE_TRANSPORT.map((t) => (
+            <button key={t.index}
+              onClick={() => setTransportMenu({ ...transportMenu, cell: t.index })}
+              style={{
+                display: 'block', width: '100%', minHeight: 40, padding: '8px 16px', background: 'none',
+                border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+              }}>
+              <span style={{ fontSize: 15, color: '#ccc' }}>{t.label} ▸</span>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{t.hint}</div>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+      {transportMenu && transportMenu.cell !== null && (
+        <CellLinkMenu
+          x={transportMenu.x} y={transportMenu.y}
+          widgetId={widget.id} cellIndex={transportMenu.cell}
+          onClose={() => setTransportMenu(null)}
+        />
+      )}
     </div>
   );
 }

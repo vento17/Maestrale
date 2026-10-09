@@ -1,8 +1,13 @@
+import DmxRecorderLive from '../../widgets/DmxRecorder/DmxRecorderLive';
+import DmxPlayerLive from '../../widgets/DmxPlayer/DmxPlayerLive';
+import type { DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget } from '../../../shared/types/project';
+import ClockLive from '../../widgets/Clock/ClockLive';
+import DmxMonitorLive from '../../widgets/DmxMonitor/DmxMonitorLive';
 import React from 'react';
 import type {
   Widget, CuesWidget, TimelineWidget, SpoutInputWidget, NdiInputWidget, SubmastersWidget,
   RouterWidget, AudioAnalyserWidget, SoundPlayerWidget, LfoWidget, MathWidget, ValueDisplayWidget,
-  MasterLevelWidget, InstanceWidget, ManualWidget, KeyboardWidget,
+  MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget,
 } from '../../../shared/types/project';
 import SliderBankLive from '../../widgets/SliderBank/SliderBankLive';
 import ButtonGridLive from '../../widgets/ButtonGrid/ButtonGridLive';
@@ -23,6 +28,8 @@ import SoundPlayerLive from '../../widgets/SoundPlayer/SoundPlayerLive';
 import LfoWidgetLive from '../../widgets/LfoWidget/LfoWidgetLive';
 import MathWidgetLive from '../../widgets/MathWidget/MathWidgetLive';
 import ValueDisplayLive from '../../widgets/ValueDisplay/ValueDisplayLive';
+import SketchLive from '../../widgets/Sketch/SketchLive';
+import AudioLevelLive from '../../widgets/AudioLevel/AudioLevelLive';
 import MasterLevelLive from '../../widgets/MasterLevel/MasterLevelLive';
 import InstanceLive from '../../widgets/Instance/InstanceLive';
 import ManualLive from '../../widgets/Manual/ManualLive';
@@ -48,13 +55,20 @@ export default function LiveWidgetInner({ widget }: { widget: Widget }): React.J
     case 'router':        return <RouterLive widget={widget as RouterWidget} />;
     case 'audioAnalyser': return <AudioAnalyserLive widget={widget as AudioAnalyserWidget} />;
     case 'soundPlayer':   return <SoundPlayerLive widget={widget as SoundPlayerWidget} />;
+    case 'noiseWidget':
     case 'lfoWidget':     return <LfoWidgetLive widget={widget as LfoWidget} />;
     case 'mathWidget':    return <MathWidgetLive widget={widget as MathWidget} />;
     case 'valueDisplay':  return <ValueDisplayLive widget={widget as ValueDisplayWidget} />;
     case 'masterLevel':   return <MasterLevelLive widget={widget as MasterLevelWidget} />;
+    case 'sketch':        return <SketchLive widget={widget as SketchWidget} />;
+    case 'audioLevel':    return <AudioLevelLive widget={widget as AudioLevelWidget} />;
     case 'instance':      return <InstanceLive widget={widget as InstanceWidget} />;
     case 'keyboard':      return <KeyboardLive widget={widget as KeyboardWidget} />;
     case 'manual':        return <ManualLive widget={widget as ManualWidget} />;
+    case 'dmxRecorder':   return <DmxRecorderLive widget={widget as DmxRecorderWidget} />;
+    case 'dmxPlayer':     return <DmxPlayerLive widget={widget as DmxPlayerWidget} />;
+    case 'clock':         return <ClockLive widget={widget as ClockWidget} />;
+    case 'dmxMonitor':    return <DmxMonitorLive widget={widget as DmxMonitorWidget} />;
     default:              return null;
   }
 }

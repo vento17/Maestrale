@@ -1,3 +1,4 @@
+import { pal } from '../../palette';
 import React, { useState, useEffect } from 'react';
 import type { MasterLevelWidget } from '../../../shared/types/project';
 import { useStore, useWidgetRuntime } from '../../store';
@@ -53,7 +54,7 @@ export default function MasterLevelLive({ widget }: { widget: MasterLevelWidget 
           touchAction: 'none',
           cursor: 'pointer',
           outline: isSlave ? SLAVE_OUTLINE : undefined,
-          outlineOffset: isSlave ? -2 : undefined,
+          outlineOffset: isSlave ? -1 : undefined,
         }}
         onPointerDown={(e) => {
           // A router link is a second way in, not a lock.
@@ -84,7 +85,7 @@ export default function MasterLevelLive({ widget }: { widget: MasterLevelWidget 
         </div>
       </div>
 
-      <div style={{ flexShrink: 0, textAlign: 'center', fontSize: 9, color: value < 1 ? '#d08a3a' : '#444' }}>
+      <div style={{ flexShrink: 0, textAlign: 'center', fontSize: 9, color: value < 1 ? pal('#da7f30') : '#444' }}>
         {value < 1 ? `scaling ${PROTOCOL_LABEL[protocol] ?? protocol} output` : 'full'}
       </div>
 

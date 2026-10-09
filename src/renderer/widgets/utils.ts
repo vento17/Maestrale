@@ -32,9 +32,9 @@ export function cellCount(widget: Widget): number {
     case 'sliderBank':     return widget.countX * widget.countY;
     case 'buttonGrid':     return widget.countX * widget.countY;
     case 'knobBank':       return widget.countX * widget.countY;
-    case 'xyPad':          return 2;
+    case 'xyPad':          return 2 * (1 + (widget.points?.length ?? 0));
     case 'stepSequencer':  return 1;
-    case 'graphWidget':    return 1;
+    case 'graphWidget':    return 1 + (widget.lanes?.length ?? 0);
     // 0..countX-1 = faders, countX..2*countX-1 = the flash buttons under them.
     // Faders keep their indices, so links saved before flash cells existed still
     // point at the same fader.
@@ -50,12 +50,19 @@ export function cellCount(widget: Widget): number {
     case 'ndiInput':
     case 'router':
     case 'valueDisplay':   return 0;
-    case 'lfoWidget':      return 1;
+    case 'noiseWidget':
+    case 'lfoWidget':      return 1 + (widget.lanes?.length ?? 0);
     case 'mathWidget':     return 1;
     case 'masterLevel':    return 1;
+    case 'audioLevel':     return 1;
+    case 'sketch':         return 2 * Math.max(1, widget.dots || 1);
     case 'instance':       return 0;  // mirrors its source; no own runtime cells
     case 'keyboard':       return widget.keys.length;   // one cell per bound key
     case 'manual':         return 0;  // documentation only — never a link source
+    case 'dmxRecorder':    return 1;  // REC
+    case 'dmxPlayer':      return widget.items.length;   // one trigger per item
+    case 'clock':          return widget.alarms.length;  // one trigger output per alarm
+    case 'dmxMonitor':     return 0;  // read-only view
   }
 }
 

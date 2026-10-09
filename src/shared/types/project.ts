@@ -29,7 +29,7 @@ export interface WidgetStyle {
 
 // ─── Widget Types ─────────────────────────────────────────────────────────────
 
-export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual';
+export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor';
 
 // ─── Widget Base ──────────────────────────────────────────────────────────────
 
@@ -121,6 +121,25 @@ export interface XYPadWidget extends WidgetBase {
   showCrosshair: boolean;
   invertX: boolean;
   invertY: boolean;
+  // More dots on the same pad (＋): dot k+2 is cells 2(k+1) (X) and 2(k+1)+1 (Y).
+  // Dot 1 uses mappingX / mappingY above.
+  points?: XYPoint[];
+}
+
+export interface XYPoint {
+  id: string;
+  label?: string;
+  color?: string;
+  mappingX: Mapping;
+  mappingY: Mapping;
+}
+
+// Mapping of an XY pad cell: even = X, odd = Y of dot ⌊cell/2⌋.
+export function xyMapping(w: XYPadWidget, cell: number): Mapping {
+  const dot = Math.floor(cell / 2);
+  const p = dot === 0 ? { mappingX: w.mappingX, mappingY: w.mappingY } : w.points?.[dot - 1];
+  if (!p) return null;
+  return cell % 2 === 0 ? p.mappingX : p.mappingY;
 }
 
 // ─── Image Widget ─────────────────────────────────────────────────────────────
@@ -180,6 +199,9 @@ export interface GraphWidget extends WidgetBase {
   playMapping?: Mapping | null;
   stopMapping?: Mapping | null;
   reverseMapping?: Mapping | null;
+  // Extra outputs (＋): the same curve read further along by `phase` (0–1 of a
+  // cycle). Cell 0 is the main output, lane k is cell k + 1.
+  lanes?: { id: string; phase: number }[];
 }
 
 // ─── Timeline ─────────────────────────────────────────────────────────────────
@@ -218,8 +240,13 @@ export interface ColorTrack {
   label: string;
   keyframes: ColorKeyframe[];
   oscAddress: string;
+  // How the colour goes out on OSC: one message "r g b" (default) or "r g b w",
+  // or one message per channel on <address>/r, /g, /b (and /w).
+  oscFormat?: ColorOscFormat;
   muted?: boolean;
 }
+
+export type ColorOscFormat = 'rgb' | 'rgbw' | 'rgb-split' | 'rgbw-split';
 
 export interface SoundRegion {
   id: string;
@@ -426,7 +453,7 @@ export interface TextWidget extends WidgetBase {
 // ─── Router ───────────────────────────────────────────────────────────────────
 // Routes a signal (widget cell, MIDI input, or OSC input) to one or more outputs.
 
-export type RouterInputType = 'widget' | 'midiCC' | 'midiNote' | 'osc';
+export type RouterInputType = 'widget' | 'midiCC' | 'midiNote' | 'osc' | 'artnet' | 'sacn';
 
 export interface RouterOutput {
   id: string;
@@ -436,6 +463,8 @@ export interface RouterOutput {
   // "ALL": drive every cell of the target widget from this one output, instead
   // of adding one output per cell. targetCellIndex is ignored when set.
   targetAllCells?: boolean;
+  // Switched off from the Router page: kept, but routes nothing.
+  muted?: boolean;
   // Per-output range mapping: read the incoming value inside [inMin, inMax] and
   // send it as [outMin, outMax]. Lets one source drive several outputs over
   // different travels — or over opposite ones, by reversing the output pair.
@@ -459,7 +488,11 @@ export interface RouterRow {
   midiNumber?: number;    // 0-127 (CC number or note number)
   // OSC source:
   oscAddress?: string;    // exact address to listen on, e.g. "/fader1"
+  // Art-Net source: one DMX channel, 0–255 read as 0–1.
+  artnetUniverse?: number;  // 15-bit port-address, as on the output side
+  artnetChannel?: number;   // 1–512
   outputs: RouterOutput[];
+  createdAt?: number;       // ms epoch — the Router page sorts by it
 }
 
 export interface RouterWidget extends WidgetBase {
@@ -526,7 +559,12 @@ export interface SoundPlayerTrack {
   fileName: string;    // display name
   volume: number;      // 0-1 per-track volume
   playMapping: Mapping;
+  end?: PlayEnd;       // what happens when it finishes (default stop)
+  fade?: number;       // seconds: fades in over the track that was playing
 }
+
+// Playlist players (Sound, DMX): what an item does when it reaches its end.
+export type PlayEnd = 'stop' | 'loop' | 'next';
 
 export interface SoundPlayerWidget extends WidgetBase {
   kind: 'soundPlayer';
@@ -537,20 +575,33 @@ export interface SoundPlayerWidget extends WidgetBase {
 // ─── LFO Widget ───────────────────────────────────────────────────────────────
 // cells[0] = current LFO output value (0–1)
 
-export type LfoWaveform = 'sine' | 'square' | 'saw' | 'triangle' | 'random';
+export type LfoWaveform = 'sine' | 'square' | 'saw' | 'triangle' | 'random' | 'noise';
 export type LfoRateMode = 'bpm' | 'hz';
 
 export interface LfoWidget extends WidgetBase {
-  kind: 'lfoWidget';
+  kind: 'lfoWidget' | 'noiseWidget';   // noiseWidget: the same widget playing smooth noise
   waveform: LfoWaveform;
   rateMode: LfoRateMode;
   rateMultiplier: number;  // when rateMode='bpm': beats per cycle (1=quarter, 2=half…)
   rateHz: number;          // when rateMode='hz'
-  amplitude: number;       // 0–1 (output swing, centred on offset)
-  offset: number;          // 0–1 (center point)
-  phase: number;           // 0–1 phase offset
+  amplitude: number;       // 0–1 (output swing, centred on `center`)
+  center?: number;         // 0–1 value the wave swings around (default 0.5)
+  offset: number;          // 0–1 of a cycle: shifts EVERY output forward together
+  phase: number;           // 0–1: spread across the outputs — output k of n is
+                           // shifted by phase × k/(n−1); 0 = all together
   playMapping?: Mapping | null;  // MIDI/OSC trigger to start
   stopMapping?: Mapping | null;  // MIDI/OSC trigger to stop (freeze)
+  // Extra outputs (＋): same waveform, rate, amplitude and offset, each shifted
+  // by its own phase. Cell 0 is the main output, lane k is cell k + 1.
+  lanes?: { id: string; phase: number }[];
+  // Speed step (×0.25 … ×4) on top of the rate. The SPEED input overrides it live.
+  speed?: number;
+  // Shape for triangle (peak position) and square (width of the high part),
+  // −1…1, 0 = none — like TouchDesigner's LFO bias.
+  bias?: number;
+  // Noise: which random pattern. Same seed = same curve, every time (1–9999).
+  // 0 / missing = derived from the widget, so two noises never match.
+  seed?: number;
 }
 
 // ─── Math / Merge Widget ──────────────────────────────────────────────────────
@@ -670,7 +721,109 @@ export type Widget =
   | MasterLevelWidget
   | InstanceWidget
   | KeyboardWidget
-  | ManualWidget;
+  | ManualWidget
+  | DmxRecorderWidget
+  | DmxPlayerWidget
+  | ClockWidget
+  | DmxMonitorWidget
+  | AudioLevelWidget
+  | SketchWidget;
+
+// ─── Sketch ───────────────────────────────────────────────────────────────────
+// Draw lines on the pad; on play, dots run along them one stroke after the
+// other and put out their X / Y. Dot k is cells 2k (X) and 2k+1 (Y), 0–1 with
+// Y up (same as the XY pad). Dots follow each other `delay` apart.
+export interface SketchStroke {
+  id: string;
+  pts: number[];          // flat x, y pairs, 0–1, y from the top
+}
+
+export interface SketchWidget extends WidgetBase {
+  kind: 'sketch';
+  strokes: SketchStroke[];
+  dots: number;           // how many dots run
+  delay: number;          // distance between dots, as a fraction of the whole drawing
+  duration: number;       // seconds for one run through the drawing at ×1
+  speed?: number;         // ×0.125 … ×8, the SPEED input overrides it live
+  loop: boolean;
+  pingPong?: boolean;     // with loop: back to the start the other way, then forward again
+  smooth?: number;        // 0–1: how much the drawing is smoothed before the dots run it
+  showGrid: boolean;
+}
+
+// ─── Audio Level ──────────────────────────────────────────────────────────────
+// OUT: a master fader for every sound LiveForge plays (Sound Player, timeline
+// audio) — cells[0] is the gain, so it can be linked/automated.
+// IN: a meter of the audio input — cells[0] is the level 0–1 (−60…0 dB), a
+// source to link anywhere.
+export interface AudioLevelWidget extends WidgetBase {
+  kind: 'audioLevel';
+  mode: 'in' | 'out';
+  deviceId?: string;          // IN: '' = the Audio in device from Settings
+  orientation?: 'vertical' | 'horizontal';
+}
+
+// ─── DMX Monitor ──────────────────────────────────────────────────────────────
+// A grid of channels showing a universe: what arrives (Art-Net in) or what
+// LiveForge sends (Art-Net / sACN out). Black = 0, white = 255. Read-only.
+
+export interface DmxMonitorWidget extends WidgetBase {
+  kind: 'dmxMonitor';
+  source: 'in' | 'out';
+  protocol: 'artnet' | 'sacn';
+  universe: number;
+  startChannel: number;   // first channel shown, 1–512 (the scroll position)
+  cols: number;
+  rows: number;
+  sourceIp?: string;      // in: only this sender ('' = everyone)
+  outputId?: string;      // out: only this destination ('' = all merged)
+}
+
+// ─── Clock ────────────────────────────────────────────────────────────────────
+// The computer's time of day, and a list of times that fire a trigger when the
+// clock reaches them — every day, for installations that run for days. Each
+// alarm is one OUTPUT cell (a short 1 → 0 pulse), linkable like any other.
+
+export interface ClockAlarm {
+  id: string;
+  time: string;        // "HH:MM:SS" (24 h)
+  label?: string;
+  enabled: boolean;
+}
+
+export interface ClockWidget extends WidgetBase {
+  kind: 'clock';
+  alarms: ClockAlarm[];
+  showSeconds: boolean;
+}
+
+// ─── DMX Recorder / Player ────────────────────────────────────────────────────
+// The recorder writes the incoming Art-Net stream to a take on disk
+// (Save/Recordings); the player sends a take back out. Their cells are inputs:
+// REC on the recorder, PLAY and STOP on the player — fire them from the Router.
+
+export interface DmxRecorderWidget extends WidgetBase {
+  kind: 'dmxRecorder';
+  universes: string;        // "0, 1, 4-6" — empty records every universe heard
+  // What it records: an input, or what LiveForge itself sends (default Art-Net in).
+  source?: 'artnet' | 'sacn' | 'out-artnet' | 'out-sacn' | 'out-enttec';
+}
+
+// A playlist of recorded takes, like the Sound Player: item k is cell k (a
+// rising edge plays it), and STOP / NEXT / PREV / FIRST are inputs.
+export interface DmxPlayerItem {
+  id: string;
+  takeId: string;
+  end: PlayEnd;      // at the end: stop, loop this item, or play the next
+  fade: number;      // seconds: crossfade from what was on output
+}
+
+export interface DmxPlayerWidget extends WidgetBase {
+  kind: 'dmxPlayer';
+  items: DmxPlayerItem[];
+  universeOffset: number;   // added to each recorded universe on the way out
+  playProtocol: 'artnet' | 'sacn';
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -732,6 +885,17 @@ export interface ArtNetConnection {
   extraOutputs?: HostOutput[];
 }
 
+// Art-Net INPUT: receive DMX on UDP 6454 (any universe). Separate from the
+// output connection so you can listen without sending, and the other way round.
+export interface ArtNetInputConnection {
+  type: 'artnetInput';
+  enabled: boolean;
+  bindHost?: string;   // local interface IP to listen on; '' / undefined = all
+  // Universes announced to ArtPoll, so senders in unicast mode (MadMapper
+  // "Use Unicast", consoles) find LiveForge in their node list. "0-3", "0, 5".
+  universes?: string;
+}
+
 export interface SacnConnection {
   type: 'sacn';
   mode: 'multicast' | 'unicast';
@@ -759,7 +923,14 @@ export interface EnttecDmxConnection {
   deviceDescription?: string;
 }
 
-export type Connection = MidiConnection | MidiInputConnection | OscConnection | ArtNetConnection | SacnConnection | LtcAudioConnection | AudioOutputConnection | EnttecDmxConnection;
+export interface SacnInputConnection {
+  type: 'sacnInput';
+  enabled: boolean;
+  bindHost?: string;   // card to join the multicast groups on; '' = every card (loopback included)
+  universes?: string;  // universes to join (multicast is per universe): "1-4", "1, 7"
+}
+
+export type Connection = MidiConnection | MidiInputConnection | OscConnection | ArtNetConnection | ArtNetInputConnection | SacnInputConnection | SacnConnection | LtcAudioConnection | AudioOutputConnection | EnttecDmxConnection;
 
 // ─── Project ──────────────────────────────────────────────────────────────────
 
@@ -779,8 +950,14 @@ export interface Project {
   // The other two transport buttons in the top bar. Optional so projects saved
   // before they existed still load.
   playTriggerMapping?: Mapping | null;
+  // Installations: go straight to Live when LiveForge starts with this project.
+  startInLive?: boolean;
   stopTriggerMapping?: Mapping | null;
   // Project-wide frame rate. Timelines read their ruler in frames against this
   // unless they carry their own timecode rate.
   frameRate?: 24 | 25 | 29.97 | 30 | 50 | 60;
+  // The project's main router: every link made by Shift-patching, right-click
+  // Link or Learn lands here. Router widgets still route their own rows, but
+  // the Router page is where links live and get edited.
+  mainRouter?: { rows: RouterRow[] };
 }

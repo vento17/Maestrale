@@ -1,9 +1,13 @@
+import { pal, palRgb } from '../../palette';
 import React, { useState, useRef, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { GraphWidget, GraphPoint, SpeedMultiplier } from '../../../shared/types/project';
 import type { MidiMapping, OscMapping } from '../../../shared/types/mapping';
 import { useGlobalTransport } from '../base/useGlobalTransport';
+import { getParamInput, onParamInputs, genSpeedFromInput } from '../base/paramInputs';
 import { useStore } from '../../store';
 import { dispatchValue } from '../../ipc/dispatch';
+import { addLane, LaneBar } from '../base/phaseLanes';
 import { bridge } from '../../ipc/bridge';
 
 const SPEED_OPTIONS: { label: string; value: SpeedMultiplier }[] = [
@@ -63,12 +67,20 @@ function getValueAt(t: number, points: GraphPoint[]): number {
   return points[points.length - 1].y;
 }
 
+// ＋ lanes: the same curve, read `phase` of a cycle further along (wrapping).
+function emitLanes(w: GraphWidget, t: number): void {
+  (w.lanes ?? []).forEach((l, k) => {
+    const lt = (((t + l.phase) % 1) + 1) % 1;
+    useStore.getState().setCellValue(w.id, k + 1, getValueAt(lt, w.points));
+  });
+}
+
 export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): React.JSX.Element {
-  const { activePageId, updateWidget, masterBpm } = useStore((s) => ({
+  const { activePageId, updateWidget, masterBpm } = useStore(useShallow((s) => ({
     activePageId:    s.activePageId,
     updateWidget:    s.updateWidget,
     masterBpm:       s.masterBpm,
-  }));
+  })));
 
   const color = widget.style.foregroundColor;
   const dim   = 'rgba(255,255,255,0.3)';
@@ -152,6 +164,7 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
     const graphVal = getValueAt(tRef.current, w.points);
     useStore.getState().setCellValue(w.id, 0, graphVal);
     if (w.mapping) dispatchValue(w.mapping, graphVal);
+    emitLanes(w, tRef.current);
 
     if (stopped) {
       isPlayingRef.current = false;
@@ -171,7 +184,8 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
     const v = getValueAt(tRef.current, w.points);
     useStore.getState().setCellValue(w.id, 0, v);
     if (w.mapping) dispatchValue(w.mapping, v);
-  }, [widget.points]);
+    emitLanes(w, tRef.current);
+  }, [widget.points, widget.lanes]);
 
   // ── Transport ──────────────────────────────────────────────────────────────
 
@@ -194,6 +208,33 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
     const w = widgetRef.current;
     if (w.mapping) dispatchValue(w.mapping, 0);
   }
+
+
+  // PLAY (level: ≥ 0.5 plays), SPEED (steps across a fader, not saved) and
+  // RESET (each press restarts) from the Router — see paramInputs GEN_INPUTS.
+  const genFns = useRef({ start: startPlaying, stop: stopPlaying, speed: (s: SpeedMultiplier) => { setLocalSpeed(s); } });
+  genFns.current = { start: startPlaying, stop: stopPlaying, speed: (s: SpeedMultiplier) => { setLocalSpeed(s); } };
+  useEffect(() => {
+    let lastPlay: boolean | undefined;
+    let lastSpeed: number | undefined;
+    let lastReset = 0;
+    return onParamInputs(() => {
+      const id = widgetRef.current.id;
+      const pv = getParamInput(id, 'play');
+      if (pv !== undefined) {
+        const on = pv >= 0.5;
+        if (on !== lastPlay) { lastPlay = on; if (on) genFns.current.start(); else genFns.current.stop(); }
+      }
+      const sv = getParamInput(id, 'speed');
+      if (sv !== undefined) {
+        const s = genSpeedFromInput(sv);
+        if (s !== lastSpeed) { lastSpeed = s; genFns.current.speed(s); }
+      }
+      const rv = getParamInput(id, 'reset') ?? 0;
+      if (rv >= 0.5 && lastReset < 0.5 && isPlayingRef.current) { genFns.current.stop(); genFns.current.start(); }
+      lastReset = rv;
+    });
+  }, []);
 
   // ── Widget setting changes ─────────────────────────────────────────────────
 
@@ -565,12 +606,19 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
         ))}
         <button
           style={{ ...btn, fontSize: 11, minWidth: 38, padding: '5px 8px',
-            color:      canDel ? 'rgba(255,110,110,0.85)' : 'rgba(255,110,110,0.2)',
+            color:      canDel ? `rgba(${palRgb('#ffb26e')},0.85)` : `rgba(${palRgb('#ffb26e')},0.2)`,
             background: 'rgba(0,0,0,0.25)',
-            border:     `1px solid ${canDel ? 'rgba(255,100,100,0.35)' : 'rgba(255,255,255,0.07)'}`,
+            border:     `1px solid ${canDel ? `rgba(${palRgb('#ffac64')},0.35)` : 'rgba(255,255,255,0.07)'}`,
             opacity:    canDel ? 1 : 0.35 }}
           onPointerDown={(e) => { e.preventDefault(); deleteSelectedPoint(); }}
         >del</button>
+
+        {/* ＋ output with its own phase */}
+        <button
+          style={{ ...btn, minWidth: 24, color: '#aaa', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.15)' }}
+          onPointerDown={(e) => { e.preventDefault(); addLane(widget); }}
+          title="Add an output reading the curve with its own phase"
+        >＋</button>
       </div>
 
       {/* ── Curve area ── */}
@@ -635,7 +683,7 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
         {/* Point handles */}
         {points.map((p, i) => {
           const isSelected  = i === selectedPoint;
-          const modeColor: Record<string, string> = { linear: color, bezier: '#88aaff', square: '#ff8844' };
+          const modeColor: Record<string, string> = { linear: color, bezier: pal('#abd9dc'), square: pal('#ff9b44') };
           const borderColor = modeColor[p.mode] ?? color;
           return (
             <div key={i} style={{
@@ -662,7 +710,7 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
             position: 'absolute',
             left: `${cpRData[0] * 100}%`, top: `${(1 - cpRData[1]) * 100}%`,
             width: 8, height: 8, transform: 'translate(-50%, -50%)', borderRadius: 2,
-            background: '#88aaff55', border: '1.5px solid #88aaff',
+            background: '#88aaff55', border: `1.5px solid ${pal('#abd9dc')}`,
             cursor: 'move', touchAction: 'none', zIndex: 3, boxSizing: 'border-box',
           }}
             onPointerDown={(e) => handleCpPointerDown(e, selectedPoint!, 'right')}
@@ -677,7 +725,7 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
             position: 'absolute',
             left: `${cpLData[0] * 100}%`, top: `${(1 - cpLData[1]) * 100}%`,
             width: 8, height: 8, transform: 'translate(-50%, -50%)', borderRadius: 2,
-            background: '#88aaff55', border: '1.5px solid #88aaff',
+            background: '#88aaff55', border: `1.5px solid ${pal('#abd9dc')}`,
             cursor: 'move', touchAction: 'none', zIndex: 3, boxSizing: 'border-box',
           }}
             onPointerDown={(e) => handleCpPointerDown(e, selectedPoint!, 'left')}
@@ -686,6 +734,12 @@ export default function GraphWidgetLive({ widget }: { widget: GraphWidget }): Re
           />
         )}
       </div>
+
+      {(widget.lanes?.length ?? 0) > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0, height: Math.min(4, widget.lanes!.length) * 18 }}>
+          {widget.lanes!.map((l, k) => <LaneBar key={l.id} widget={widget} index={k + 1} color={color} />)}
+        </div>
+      )}
 
       {widget.style.showLabel && (
         <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.18)', textAlign: 'center', flexShrink: 0 }}>

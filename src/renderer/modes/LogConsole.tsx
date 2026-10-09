@@ -1,7 +1,33 @@
+import { pal, onPalette } from '../palette';
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { bridge } from '../ipc/bridge';
 import type { LogLevel } from '../store/appSlice';
+import { GLOBAL_BAR_HEIGHT } from './GlobalBar';
+
+// LOG in the top bar, last of the status badges: lit when all is well, red
+// with the count when there are errors you have not seen. Click: log opens
+// right under the bar.
+export function LogBadge(): React.JSX.Element {
+  const open = useStore((s) => s.logOpen);
+  const unseen = useStore((s) => s.unseenErrors);
+  const setLogOpen = useStore((s) => s.setLogOpen);
+  const bad = unseen > 0;
+  return (
+    <button
+      title={bad ? `${unseen} new error(s) — open the log` : 'Log — all fine'}
+      onClick={() => setLogOpen(!open)}
+      style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: 1, fontFamily: 'monospace', cursor: 'pointer',
+        height: 20, padding: '0 8px', lineHeight: 1, whiteSpace: 'nowrap',
+        background: 'none', border: 'none',
+        color: bad ? '#ff4a42' : '#e8e8e8',
+        textDecoration: open ? 'underline' : 'none', textUnderlineOffset: 4,
+        textShadow: bad ? '0 0 8px rgba(255,60,50,0.7)' : 'none',
+      }}
+    >{bad ? `Log ${unseen}` : 'Log'}</button>
+  );
+}
 
 // Install global error capture exactly once (survives component remounts).
 let installed = false;
@@ -30,9 +56,11 @@ function safeStringify(v: unknown): string {
   try { return JSON.stringify(v); } catch { return String(v); }
 }
 
-const LEVEL_COLOR: Record<LogLevel, string> = {
-  error: '#ff5c5c', warn: '#ffcf5c', info: '#8ab4ff',
-};
+const make_LEVEL_COLOR = (): Record<LogLevel, string> => ({
+  error: '#ff5c5c', warn: pal('#ff8a1f'), info: pal('#8fd3d6'),
+});
+let LEVEL_COLOR: Record<LogLevel, string> = make_LEVEL_COLOR();
+onPalette(() => { LEVEL_COLOR = make_LEVEL_COLOR(); });
 
 export default function LogConsole(): React.JSX.Element {
   useEffect(() => { installCapture(); }, []);
@@ -46,7 +74,6 @@ export default function LogConsole(): React.JSX.Element {
 
   const entries      = useStore((s) => s.logEntries);
   const open         = useStore((s) => s.logOpen);
-  const unseen       = useStore((s) => s.unseenErrors);
   const setLogOpen   = useStore((s) => s.setLogOpen);
   const clearLog     = useStore((s) => s.clearLog);
 
@@ -54,7 +81,6 @@ export default function LogConsole(): React.JSX.Element {
   const [copied, setCopied] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const hasError = unseen > 0;
   const shown = errorsOnly ? entries.filter((e) => e.level === 'error') : entries;
 
   // Auto-scroll to newest when open.
@@ -90,29 +116,13 @@ export default function LogConsole(): React.JSX.Element {
 
   return (
     <>
-      {/* Bottom-left dot — mirrors the live params arrow at top-left */}
-      <button
-        title={hasError ? `${unseen} new error(s) — open log` : 'Open log'}
-        onClick={() => setLogOpen(!open)}
-        style={{
-          position: 'fixed', right: 8, bottom: 8, zIndex: 1200,
-          width: 22, height: 22, padding: 0, borderRadius: '50%',
-          background: hasError ? '#c0392b' : 'rgba(0,0,0,0.7)',
-          border: `1px solid ${hasError ? '#ff6b5c' : '#2a2a2a'}`,
-          color: hasError ? '#fff' : (entries.length ? '#888' : '#555'),
-          cursor: 'pointer', fontSize: 11, lineHeight: 1,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: hasError ? '0 0 8px rgba(220,60,40,0.7)' : 'none',
-        }}
-      >
-        ●
-      </button>
-
       {open && (
         <div style={{
-          position: 'fixed', left: 8, right: 8, bottom: 36, zIndex: 1200,
-          height: 220, background: '#0d0d0d', border: '1px solid #2a2a2a',
-          borderRadius: 6, boxShadow: '0 -4px 24px rgba(0,0,0,0.6)',
+          // Always drops down under the top bar, from the LOG badge.
+          position: 'fixed', right: 8, top: GLOBAL_BAR_HEIGHT + 4, zIndex: 1200,
+          width: 'min(900px, calc(100vw - 16px))',
+          height: 260, background: '#0d0d0d', border: '1px solid #2a2a2a',
+          borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           fontFamily: 'monospace',
         }}>

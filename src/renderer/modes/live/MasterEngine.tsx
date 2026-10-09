@@ -3,6 +3,7 @@ import type { MasterLevelWidget } from '../../../shared/types/project';
 import { useStore } from '../../store';
 import { setMasterGain, clearMasterGain, resetMasterGains } from '../../ipc/dispatch';
 import { resendProtocol } from '../../ipc/resend';
+import { setAudioMaster } from '../../audio/audioMaster';
 
 const PROTOCOLS = ['midi', 'osc', 'artnet', 'sacn', 'enttec'] as const;
 type Protocol = typeof PROTOCOLS[number];
@@ -27,6 +28,12 @@ function applyGains(last: Partial<Record<Protocol, number>>, resend: (p: Protoco
       desired[m.protocol] = v;   // last master wins for a shared protocol
     }
   }
+  // Audio master: the last Audio Level in OUT mode, unity when there is none.
+  let audio = 1;
+  for (const page of state.project.pages) for (const w of page.widgets) {
+    if (w.kind === 'audioLevel' && w.mode === 'out') audio = state.runtime.widgets[w.id]?.cells[0]?.value ?? 1;
+  }
+  setAudioMaster(audio);
   for (const p of PROTOCOLS) {
     const gain = desired[p];
     if (gain !== undefined) setMasterGain(p, gain);
@@ -74,6 +81,7 @@ export default function MasterEngine(): null {
       unsubscribe();
       if (frame) cancelAnimationFrame(frame);
       resetMasterGains();
+      setAudioMaster(1);
     };
   }, []);
   return null;

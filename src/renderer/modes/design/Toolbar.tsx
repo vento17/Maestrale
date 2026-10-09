@@ -1,16 +1,17 @@
 import React from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore, useActivePageId } from '../../store';
 import { bridge } from '../../ipc/bridge';
 
 export default function Toolbar(): React.JSX.Element {
-  const { setMode, openWidgetPicker, loadProject, project, openSettings, isSettingsOpen } = useStore((s) => ({
+  const { setMode, openWidgetPicker, loadProject, project, openSettings, isSettingsOpen } = useStore(useShallow((s) => ({
     setMode: s.setMode,
     openWidgetPicker: s.openWidgetPicker,
     loadProject: s.loadProject,
     project: s.project,
     openSettings: s.openSettings,
     isSettingsOpen: s.isSettingsOpen,
-  }));
+  })));
   const activePageId = useActivePageId();
 
   async function handleSave() {

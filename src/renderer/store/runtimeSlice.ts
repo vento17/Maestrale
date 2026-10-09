@@ -34,6 +34,7 @@ function makeWidgetRuntime(widget: Widget): WidgetRuntime {
   const cells = Array.from({ length: count }, makeCell);
   // A master starts at full (1) — 0 would mute everything on its protocol.
   if (widget.kind === 'masterLevel' && cells[0]) cells[0].value = 1;
+  if (widget.kind === 'audioLevel' && widget.mode === 'out' && cells[0]) cells[0].value = 1;
   return { widgetId: widget.id, cells };
 }
 

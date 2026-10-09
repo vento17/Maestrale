@@ -1,9 +1,22 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import { SacnService } from '../services/SacnService';
+import { SacnInputService } from '../services/SacnInputService';
 
-const svc = new SacnService();
+// Shared with the DMX player.
+export const sacnOut = new SacnService();
+const svc = sacnOut;
+export let sacnIn: SacnInputService | null = null;
 
-export function registerSacnHandlers(): void {
+export function registerSacnHandlers(win: BrowserWindow): void {
+  const input = sacnIn = new SacnInputService(
+    (frame) => { if (!win.isDestroyed()) win.webContents.send('tr:dmxIn:frame', frame); },
+    (status) => { if (!win.isDestroyed()) win.webContents.send('tr:dmxIn:status', status); },
+    () => svc.localPort(),
+  );
+  ipcMain.handle('tr:sacn:listen', (_e, p) => input.listen(p?.bindHost, p?.universes));
+  ipcMain.handle('tr:sacn:stopListen', () => { input.stop(); return { ok: true }; });
+  win.on('closed', () => input.stop());
+
   ipcMain.handle('tr:sacn:configure', (_e, config) => {
     svc.configure(config.priority, config.outputs ?? []);
     return { ok: true };

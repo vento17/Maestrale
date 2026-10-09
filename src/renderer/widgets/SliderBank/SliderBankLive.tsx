@@ -1,3 +1,4 @@
+import { pal, palRgb } from '../../palette';
 import React, { useEffect, useRef, useState } from 'react';
 import type { SliderBankWidget } from '../../../shared/types/project';
 import { useStore, useWidgetRuntime } from '../../store';
@@ -23,7 +24,7 @@ export default function SliderBankLive({ widget }: { widget: SliderBankWidget })
   const [contextMenu, setContextMenu] = useState<{ cellIndex: number; x: number; y: number } | null>(null);
   const [dragOverCell, setDragOverCell] = useState<number | null>(null);
 
-  // Which cells are slaved (driven by a router row) — shown with a red outline
+  // Which cells are slaved (driven by a router row) — shown with a thin blue outline
   // and locked against manual dragging.
   const slavedCells = useSlavedCells(widget.id);
 
@@ -84,13 +85,13 @@ export default function SliderBankLive({ widget }: { widget: SliderBankWidget })
             key={i}
             style={{
               position: 'relative',
-              background: isDragOver ? 'rgba(100,200,255,0.15)' : 'rgba(0,0,0,0.35)',
+              background: isDragOver ? `rgba(${palRgb('#91ced2')},0.15)` : 'rgba(0,0,0,0.35)',
               borderRadius: 4,
               overflow: 'hidden',
               touchAction: 'none',
               cursor: 'pointer',
-              outline: isLearnTarget ? '2px solid #ff6600'
-                : isDragOver ? '2px solid #64c8ff'
+              outline: isLearnTarget ? `2px solid ${pal('#ff7700')}`
+                : isDragOver ? `2px solid ${pal('#91ced2')}`
                 : isSlave ? SLAVE_OUTLINE
                 : undefined,
             }}
@@ -191,10 +192,10 @@ export default function SliderBankLive({ widget }: { widget: SliderBankWidget })
             )}
             {isLearnTarget && (
               <div style={{
-                position: 'absolute', inset: 0, background: 'rgba(255,102,0,0.12)',
+                position: 'absolute', inset: 0, background: `rgba(${palRgb('#ff7700')},0.12)`,
                 zIndex: 3, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <span style={{ fontSize: 9, color: '#ff6600', fontFamily: 'monospace', letterSpacing: 1 }}>LEARN</span>
+                <span style={{ fontSize: 9, color: pal('#ff7700'), fontFamily: 'monospace', letterSpacing: 1 }}>LEARN</span>
               </div>
             )}
           </div>

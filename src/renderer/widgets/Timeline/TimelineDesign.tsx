@@ -1,12 +1,13 @@
+import { pal } from '../../palette';
 import React from 'react';
 import type { TimelineWidget, ValueTrack, ColorTrack } from '../../../shared/types/project';
 
 const TRACK_H = 22;
 
 function trackColor(kind: string): string {
-  if (kind === 'value') return '#2a6090';
-  if (kind === 'color') return '#604a20';
-  return '#2a5040';
+  if (kind === 'value') return pal('#367f84');
+  if (kind === 'color') return pal('#6d3d13');
+  return pal('#2a4d50');
 }
 
 function trackIcon(kind: string): string {

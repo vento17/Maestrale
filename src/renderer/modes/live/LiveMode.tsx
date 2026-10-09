@@ -5,6 +5,7 @@ import LiveCanvas from './LiveCanvas';
 import LiveSidebar from './LiveSidebar';
 import RouterEngine from './RouterEngine';
 import MasterEngine from './MasterEngine';
+import PatchLayer from './PatchLayer';
 import { bridge } from '../../ipc/bridge';
 import { artnetConfigOutputs, sacnConfigOutputs, oscConfigOutputs, midiConfigOutputs } from '../../../shared/outputs';
 
@@ -14,7 +15,6 @@ export default function LiveMode(): React.JSX.Element {
   const setMode              = useStore((s) => s.setMode);
   const initRuntime          = useStore((s) => s.initRuntime);
   const liveSidebarOpen      = useStore((s) => s.liveSidebarOpen);
-  const setLiveSidebarOpen   = useStore((s) => s.setLiveSidebarOpen);
   const setLiveSelectedWidgetId = useStore((s) => s.setLiveSelectedWidgetId);
   const hoverInfo            = useStore((s) => s.hoverInfo);
   const page                 = useActivePage();
@@ -24,7 +24,8 @@ export default function LiveMode(): React.JSX.Element {
   // Enter fullscreen on mount, exit on unmount
   useEffect(() => {
     bridge.invoke('tr:window:fullscreen', true).catch(() => {});
-    return () => { bridge.invoke('tr:window:fullscreen', false).catch(() => {}); };
+    // Leaving Live keeps full screen: LiveForge starts full screen and F11 is
+    // the way out.
   }, []);
 
   // Runtime covers EVERY page's widgets (not just the active one) so cross-page
@@ -116,31 +117,8 @@ export default function LiveMode(): React.JSX.Element {
       {/* Global engines — run across all pages (cross-page links & master gains) */}
       <RouterEngine />
       <MasterEngine />
-
-      {/* Sidebar toggle arrow — always visible at top-left */}
-      <button
-        title={liveSidebarOpen ? 'Close live params' : 'Open live params'}
-        onClick={() => setLiveSidebarOpen(!liveSidebarOpen)}
-        style={{
-          position: 'absolute',
-          top: 8,
-          right: liveSidebarOpen ? SIDEBAR_WIDTH + 8 : 8,
-          zIndex: 200,
-          width: 22, height: 22,
-          padding: 0,
-          background: 'rgba(0,0,0,0.7)',
-          border: '1px solid #2a2a2a',
-          color: '#555',
-          borderRadius: 4,
-          cursor: 'pointer',
-          fontSize: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'right 0.2s ease',
-          lineHeight: 1,
-        }}
-      >
-        {liveSidebarOpen ? '▶' : '◀'}
-      </button>
+      {/* Hold Shift: drag cables from outputs to controls to link them. */}
+      <PatchLayer />
 
       {/* Canvas fills remaining space.
           EVERY page stays mounted, not just the visible one. A widget only
@@ -185,7 +163,7 @@ export default function LiveMode(): React.JSX.Element {
           labels can be turned off to keep widgets compact. */}
       {hoverInfo && (
         <div style={{
-          position: 'fixed', bottom: 6, left: 38, right: 38, height: 22,
+          position: 'fixed', bottom: 6, left: 8, right: 8, height: 22,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           pointerEvents: 'none', zIndex: 180,
         }}>

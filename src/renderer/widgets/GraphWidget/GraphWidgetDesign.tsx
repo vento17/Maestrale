@@ -1,3 +1,4 @@
+import { pal } from '../../palette';
 import React from 'react';
 import type { GraphWidget, GraphPoint, SpeedMultiplier } from '../../../shared/types/project';
 
@@ -96,7 +97,7 @@ export default function GraphWidgetDesign({ widget }: { widget: GraphWidget }): 
 
         {/* Dot overlays — fixed pixel size, same as live mode */}
         {points.map((p, i) => {
-          const modeColor: Record<string, string> = { linear: color, bezier: '#88aaff', square: '#ff8844' };
+          const modeColor: Record<string, string> = { linear: color, bezier: pal('#abd9dc'), square: pal('#ff9b44') };
           const borderColor = modeColor[p.mode] ?? color;
           return (
             <div key={i} style={{

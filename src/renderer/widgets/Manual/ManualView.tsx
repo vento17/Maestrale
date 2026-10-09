@@ -1,3 +1,4 @@
+import { pal } from '../../palette';
 import React, { useState } from 'react';
 import type { ManualWidget } from '../../../shared/types/project';
 import { SETTINGS_ENTRIES, WIDGET_ENTRIES, type ManualEntry } from './manualContent';
@@ -62,7 +63,7 @@ export default function ManualView({ widget, interactive }: {
     }}>
       <TabRow entries={SETTINGS_ENTRIES} accent={fg} />
       <div style={{ height: 1, background: 'rgba(255,255,255,0.10)', flexShrink: 0 }} />
-      <TabRow entries={WIDGET_ENTRIES} accent="#64c8ff" />
+      <TabRow entries={WIDGET_ENTRIES} accent={pal('#91ced2')} />
       <div style={{ height: 1, background: 'rgba(255,255,255,0.16)', flexShrink: 0 }} />
 
       <div style={{

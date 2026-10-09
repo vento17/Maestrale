@@ -1,3 +1,5 @@
+import { pal } from '../../palette';
+import { useShallow } from 'zustand/react/shallow';
 import React from 'react';
 import type { RouterWidget, RouterRow, Widget } from '../../../shared/types/project';
 import type { Mapping, OscMapping, MidiMapping, ArtNetMapping, SacnMapping, EnttecDmxMapping } from '../../../shared/types/mapping';
@@ -45,6 +47,8 @@ function sourceLabel(row: RouterRow, src: Widget | undefined): { primary: string
   if (t === 'midiCC')   return { primary: 'MIDI CC',   secondary: `ch${row.midiChannel ?? 1} #${row.midiNumber ?? 0}` };
   if (t === 'midiNote') return { primary: 'MIDI Note', secondary: `ch${row.midiChannel ?? 1} #${row.midiNumber ?? 0}` };
   if (t === 'osc')      return { primary: 'OSC',       secondary: row.oscAddress ?? '—' };
+  if (t === 'artnet')   return { primary: 'Art-Net',   secondary: `U${row.artnetUniverse ?? 0} ch${row.artnetChannel ?? 1}` };
+  if (t === 'sacn')     return { primary: 'sACN',      secondary: `U${row.artnetUniverse ?? 1} ch${row.artnetChannel ?? 1}` };
   return {
     primary: src ? src.label : '—',
     secondary: row.allCells ? allCellsLabel(src) : cellLabel(src, row.cellIndex),
@@ -65,7 +69,7 @@ export default function RouterDesign({ widget }: { widget: RouterWidget }): Reac
   }, [project.pages]);
 
   // Custom equality prevents re-renders when widget-cell values haven't changed.
-  const runtimeValues = useStore(
+  const runtimeValues = useStore(useShallow(
     (state) => {
       const out: Record<string, number> = {};
       for (const row of widget.rows) {
@@ -82,12 +86,7 @@ export default function RouterDesign({ widget }: { widget: RouterWidget }): Reac
       }
       return out;
     },
-    (a, b) => {
-      const ka = Object.keys(a);
-      if (ka.length !== Object.keys(b).length) return false;
-      return ka.every(k => a[k] === b[k]);
-    }
-  );
+  ));
 
   return (
     <div style={{
@@ -150,7 +149,7 @@ export default function RouterDesign({ widget }: { widget: RouterWidget }): Reac
                         → {tw ? tw.label : '?'} · {out.targetAllCells ? allCellsLabel(tw) : cellLabel(tw, out.targetCellIndex ?? 0)}
                       </span>
                       {showValue && (
-                        <span style={{ fontSize: fs - 2, color: cellV !== ov ? '#8a6a3a' : '#555', marginLeft: 8 }}>
+                        <span style={{ fontSize: fs - 2, color: cellV !== ov ? pal('#a75d1d') : '#555', marginLeft: 8 }}>
                           {cellV.toFixed(3)}
                         </span>
                       )}
@@ -168,7 +167,7 @@ export default function RouterDesign({ widget }: { widget: RouterWidget }): Reac
                       → {protocolDesc(out.mapping)}
                     </span>
                     {showValue && (
-                      <span style={{ fontSize: fs - 2, color: clamped ? '#8a6a3a' : '#555', marginLeft: 8 }}>
+                      <span style={{ fontSize: fs - 2, color: clamped ? pal('#a75d1d') : '#555', marginLeft: 8 }}>
                         {scaledDisplay(out.mapping.type === 'osc' ? ov : Math.max(0, Math.min(1, ov)), out.mapping)}
                       </span>
                     )}

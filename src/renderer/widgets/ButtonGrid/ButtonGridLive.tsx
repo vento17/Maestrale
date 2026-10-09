@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { ButtonGridWidget } from '../../../shared/types/project';
 import { useStore, useWidgetRuntime } from '../../store';
 import { bridge } from '../../ipc/bridge';
@@ -43,11 +44,11 @@ function NavArrow({ onClick, disabled, children }: { onClick: () => void; disabl
 export default function ButtonGridLive({ widget }: { widget: ButtonGridWidget }): React.JSX.Element {
   const { countX, countY, spacingX, spacingY, style, cells } = widget;
   const runtime = useWidgetRuntime(widget.id);
-  const { setCellValue, setButtonActive, applyFeedback } = useStore((s) => ({
+  const { setCellValue, setButtonActive, applyFeedback } = useStore(useShallow((s) => ({
     setCellValue: s.setCellValue,
     setButtonActive: s.setButtonActive,
     applyFeedback: s.applyFeedback,
-  }));
+  })));
 
   const widgetRef = useRef(widget);
   useEffect(() => { widgetRef.current = widget; });
@@ -178,7 +179,7 @@ export default function ButtonGridLive({ widget }: { widget: ButtonGridWidget })
                 borderRadius: 4,
                 border: `2px solid ${color}`,
                 outline: isSlave ? SLAVE_OUTLINE : undefined,
-                outlineOffset: isSlave ? -2 : undefined,
+                outlineOffset: isSlave ? -1 : undefined,
                 position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
@@ -192,7 +193,7 @@ export default function ButtonGridLive({ widget }: { widget: ButtonGridWidget })
                 e.preventDefault();
                 if (e.button !== 0) return;   // right-click → context menu only
                 // A slaved button is still playable by hand: the router link is
-                // a second way in, not a lock. The red outline says it is linked.
+                // a second way in, not a lock. The blue outline says it is linked.
                 activate(cellIdx);
               }}
               onPointerUp={() => deactivate(cellIdx)}

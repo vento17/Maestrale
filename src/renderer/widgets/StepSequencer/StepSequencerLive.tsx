@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { StepSequencerWidget, SpeedMultiplier } from '../../../shared/types/project';
 import type { Mapping } from '../../../shared/types/mapping';
 import { useGlobalTransport } from '../base/useGlobalTransport';
+import { getParamInput, onParamInputs, genSpeedFromInput } from '../base/paramInputs';
 import { useStore } from '../../store';
 import { dispatchValue } from '../../ipc/dispatch';
 
@@ -22,11 +24,11 @@ function fmtValue(normalized: number, mapping: Mapping): string {
 }
 
 export default function StepSequencerLive({ widget }: { widget: StepSequencerWidget }): React.JSX.Element {
-  const { activePageId, updateWidget, masterBpm } = useStore((s) => ({
+  const { activePageId, updateWidget, masterBpm } = useStore(useShallow((s) => ({
     activePageId:     s.activePageId,
     updateWidget:     s.updateWidget,
     masterBpm:        s.masterBpm,
-  }));
+  })));
 
   const color = widget.style.foregroundColor;
   const dim   = 'rgba(255,255,255,0.3)';
@@ -132,6 +134,33 @@ export default function StepSequencerLive({ widget }: { widget: StepSequencerWid
     const m = widgetRef.current.mapping;
     if (m) dispatchValue(m, 0);
   }
+
+
+  // PLAY (level: ≥ 0.5 plays), SPEED (steps across a fader, not saved) and
+  // RESET (each press restarts) from the Router — see paramInputs GEN_INPUTS.
+  const genFns = useRef({ start: startPlaying, stop: stopPlaying, speed: (s: SpeedMultiplier) => { setLocalSpeed(s); } });
+  genFns.current = { start: startPlaying, stop: stopPlaying, speed: (s: SpeedMultiplier) => { setLocalSpeed(s); } };
+  useEffect(() => {
+    let lastPlay: boolean | undefined;
+    let lastSpeed: number | undefined;
+    let lastReset = 0;
+    return onParamInputs(() => {
+      const id = widgetRef.current.id;
+      const pv = getParamInput(id, 'play');
+      if (pv !== undefined) {
+        const on = pv >= 0.5;
+        if (on !== lastPlay) { lastPlay = on; if (on) genFns.current.start(); else genFns.current.stop(); }
+      }
+      const sv = getParamInput(id, 'speed');
+      if (sv !== undefined) {
+        const s = genSpeedFromInput(sv);
+        if (s !== lastSpeed) { lastSpeed = s; genFns.current.speed(s); }
+      }
+      const rv = getParamInput(id, 'reset') ?? 0;
+      if (rv >= 0.5 && lastReset < 0.5 && isPlayingRef.current) { genFns.current.stop(); genFns.current.start(); }
+      lastReset = rv;
+    });
+  }, []);
 
   function toggleReverse() {
     const next = !isReverseRef.current;

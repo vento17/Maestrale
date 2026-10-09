@@ -1,3 +1,4 @@
+import { pal } from '../palette';
 import type {
   Widget, WidgetKind,
   SliderBankWidget, ButtonGridWidget, KnobBankWidget, XYPadWidget,
@@ -11,7 +12,7 @@ import type {
   AutoBpmWidget,
   AudioAnalyserWidget, SoundPlayerWidget,
   LfoWidget, MathWidget, ValueDisplayWidget,
-  MasterLevelWidget, InstanceWidget, ManualWidget, KeyboardWidget,
+  MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget, DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget,
 } from '../../shared/types/project';
 import { BEAT_DIVISORS } from '../../shared/types/project';
 import type { MidiMapping, OscMapping } from '../../shared/types/mapping';
@@ -24,8 +25,8 @@ import {
   DEFAULT_SPOUT_RECT, DEFAULT_NDI_RECT, DEFAULT_SUBMASTERS_RECT, DEFAULT_ROUTER_RECT,
   DEFAULT_AUTO_BPM_RECT, DEFAULT_AUDIO_ANALYSER_RECT, DEFAULT_SOUND_PLAYER_RECT,
   DEFAULT_LFO_RECT, DEFAULT_MATH_RECT, DEFAULT_VALUE_DISPLAY_RECT,
-  DEFAULT_MASTER_LEVEL_RECT, DEFAULT_INSTANCE_RECT, DEFAULT_MANUAL_RECT,
-  DEFAULT_KEYBOARD_RECT,
+  DEFAULT_MASTER_LEVEL_RECT, DEFAULT_AUDIO_LEVEL_RECT, DEFAULT_SKETCH_RECT, DEFAULT_INSTANCE_RECT, DEFAULT_MANUAL_RECT,
+  DEFAULT_KEYBOARD_RECT, DEFAULT_DMX_RECORDER_RECT, DEFAULT_DMX_PLAYER_RECT, DEFAULT_CLOCK_RECT, DEFAULT_DMX_MONITOR_RECT,
 } from '../../shared/constants';
 
 // ─── Mapping auto-increment helpers ──────────────────────────────────────────
@@ -322,7 +323,7 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         spacingX: 6,
         spacingY: 6,
         mergeMode: 'htp',
-        linkedWidgetIds: [],
+        linkedWidgetIds: ['*all*'],   // every slider, knob, button and XY pad, on every page
         scenes: Array.from({ length: countX }, (_, i) => ({
           label: `${i + 1}`,
           snapshot: {},
@@ -404,22 +405,26 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         masterVolume: 0.8,
       } satisfies SoundPlayerWidget;
     }
+    case 'noiseWidget':
     case 'lfoWidget': {
+      const noise = kind === 'noiseWidget';
       return {
-        id, zIndex, kind: 'lfoWidget',
-        label: 'LFO',
+        id, zIndex, kind: noise ? 'noiseWidget' : 'lfoWidget',
+        label: noise ? 'Noise' : 'LFO',
         rect: { ...DEFAULT_LFO_RECT },
         style: { ...DEFAULT_WIDGET_STYLE, backgroundColor: '#060608' },
         outputProtocol: 'midi',
         mapping: defaultMidiMapping(0, baseCC),
         feedbackRules: [],
-        waveform: 'sine',
-        rateMode: 'bpm',
+        waveform: noise ? 'noise' : 'sine',
+        ...(noise ? { seed: 1 + Math.floor(Math.random() * 9999) } : {}),
+        rateMode: noise ? 'hz' : 'bpm',
         rateMultiplier: 1,
-        rateHz: 1,
+        rateHz: noise ? 0.5 : 1,
         amplitude: 1,
-        offset: 0.5,
-        phase: 0,
+        center: 0.5,
+        offset: 0,
+        phase: 0.5,
         playMapping: null,
         stopMapping: null,
       } satisfies LfoWidget;
@@ -473,6 +478,38 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         orientation: 'vertical',
       } satisfies MasterLevelWidget;
     }
+    case 'sketch': {
+      return {
+        id, zIndex, kind: 'sketch',
+        label: 'Sketch',
+        rect: { ...DEFAULT_SKETCH_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE, foregroundColor: pal('#82c7cc') },
+        outputProtocol: 'midi',
+        mapping: null,
+        feedbackRules: [],
+        strokes: [],
+        dots: 1,
+        delay: 0.05,
+        duration: 4,
+        speed: 1,
+        loop: true,
+        showGrid: true,
+      } satisfies SketchWidget;
+    }
+    case 'audioLevel': {
+      return {
+        id, zIndex, kind: 'audioLevel',
+        label: 'Audio',
+        rect: { ...DEFAULT_AUDIO_LEVEL_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'midi',
+        mapping: null,
+        feedbackRules: [],
+        mode: 'out',
+        deviceId: '',
+        orientation: 'vertical',
+      } satisfies AudioLevelWidget;
+    }
     case 'keyboard': {
       return {
         id, zIndex, kind: 'keyboard',
@@ -489,6 +526,62 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         spacingX: 6,
         spacingY: 6,
       } satisfies KeyboardWidget;
+    }
+    case 'dmxRecorder': {
+      return {
+        id, zIndex, kind: 'dmxRecorder',
+        label: 'Recorder',
+        rect: { ...DEFAULT_DMX_RECORDER_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'artnet',
+        mapping: null,
+        feedbackRules: [],
+        universes: '',
+      } satisfies DmxRecorderWidget;
+    }
+    case 'dmxPlayer': {
+      return {
+        id, zIndex, kind: 'dmxPlayer',
+        label: 'Player',
+        rect: { ...DEFAULT_DMX_PLAYER_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'artnet',
+        mapping: null,
+        feedbackRules: [],
+        items: [],
+        universeOffset: 0,
+        playProtocol: 'artnet',
+      } satisfies DmxPlayerWidget;
+    }
+    case 'dmxMonitor': {
+      return {
+        id, zIndex, kind: 'dmxMonitor',
+        label: 'DMX Monitor',
+        rect: { ...DEFAULT_DMX_MONITOR_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'artnet',
+        mapping: null,
+        feedbackRules: [],
+        source: 'in',
+        protocol: 'artnet',
+        universe: 0,
+        startChannel: 1,
+        cols: 16,
+        rows: 32,
+      } satisfies DmxMonitorWidget;
+    }
+    case 'clock': {
+      return {
+        id, zIndex, kind: 'clock',
+        label: 'Clock',
+        rect: { ...DEFAULT_CLOCK_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE, foregroundColor: pal('#ff902f') },
+        outputProtocol: 'midi',
+        mapping: null,
+        feedbackRules: [],
+        alarms: [],
+        showSeconds: true,
+      } satisfies ClockWidget;
     }
     case 'manual': {
       return {
@@ -521,7 +614,7 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
 // Count total cells used across all widgets to compute next free CC
 export function nextFreeCc(widgets: Widget[]): number {
   return widgets.reduce((acc, w) => {
-    if (w.kind === 'xyPad') return acc + 2;
+    if (w.kind === 'xyPad') return acc + 2 * (1 + (w.points?.length ?? 0));
     if (w.kind === 'imageWidget' || w.kind === 'textWidget') return acc;
     if (w.kind === 'stepSequencer' || w.kind === 'graphWidget') return acc + 1;
     if (w.kind === 'cues' || w.kind === 'timeline') return acc;
@@ -532,11 +625,12 @@ export function nextFreeCc(widgets: Widget[]): number {
     if (w.kind === 'audioAnalyser') return acc;
     if (w.kind === 'soundPlayer') return acc;
     if (w.kind === 'valueDisplay') return acc;
-    if (w.kind === 'masterLevel') return acc;
+    if (w.kind === 'masterLevel' || w.kind === 'audioLevel') return acc;
     if (w.kind === 'instance') return acc;
     if (w.kind === 'manual') return acc;
+    if (w.kind === 'dmxRecorder' || w.kind === 'dmxPlayer' || w.kind === 'clock' || w.kind === 'dmxMonitor') return acc;
     if (w.kind === 'keyboard') return acc + w.keys.length;
-    if (w.kind === 'lfoWidget' || w.kind === 'mathWidget') return acc + 1;
-    return acc + w.countX * w.countY;
+    if (w.kind === 'lfoWidget' || w.kind === 'noiseWidget' || w.kind === 'mathWidget') return acc + 1;
+    return 'countX' in w ? acc + w.countX * w.countY : acc;
   }, 0);
 }

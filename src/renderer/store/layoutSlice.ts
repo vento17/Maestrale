@@ -1,7 +1,8 @@
 import type { StateCreator } from 'zustand';
 import { nanoid } from 'nanoid';
+import { eachRouter, mainRouterRows } from '../widgets/base/routers';
 import type { StoreState } from './index';
-import type { Project, Page, Widget, Rect, WidgetKind, Connection, OutputProtocol, RouterWidget, RouterRow, RouterInputType } from '../../shared/types/project';
+import type { Project, Page, Widget, Rect, WidgetKind, Connection, OutputProtocol, RouterRow, RouterOutput, RouterInputType } from '../../shared/types/project';
 import type { Mapping } from '../../shared/types/mapping';
 import { makeDefaultWidget, nextFreeCc, makeSliderCells, makeButtonCells, makeKnobCells, defaultMidiMapping, defaultOscMapping, widgetLabelNum } from '../widgets/defaults';
 
@@ -9,9 +10,26 @@ const KIND_LABEL_PREFIX: Partial<Record<WidgetKind, string>> = {
   sliderBank: 'slider', buttonGrid: 'button', knobBank: 'knob', xyPad: 'xy',
   stepSequencer: 'seq', graphWidget: 'graph', cues: 'cues', timeline: 'timeline',
   spoutInput: 'spout', ndiInput: 'ndi', submasters: 'sub', router: 'router',
-  imageWidget: 'image', textWidget: 'text', masterLevel: 'master', instance: 'instance',
-  manual: 'manual', keyboard: 'keys',
+  imageWidget: 'image', textWidget: 'text', masterLevel: 'master', audioLevel: 'audio', noiseWidget: 'noise', sketch: 'sketch', instance: 'instance',
+  lfoWidget: 'lfo', mathWidget: 'math',
+  manual: 'manual', keyboard: 'keys', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', dmxMonitor: 'monitor',
 };
+
+// New widgets speak OSC: every control gets an address named after its label
+// (/s1/1 … for a bank, /xy1/x · /xy1/y, /lfo1 …). DMX widgets keep their DMX.
+function defaultToOsc(w: Widget): void {
+  if (w.outputProtocol !== 'midi') return;
+  w.outputProtocol = 'osc';
+  const num = widgetLabelNum(w.label);
+  if ('cells' in w && (w.kind === 'sliderBank' || w.kind === 'buttonGrid' || w.kind === 'knobBank')) {
+    (w.cells as { mapping: unknown }[]).forEach((c, i) => { c.mapping = defaultOscMapping(w.kind, num, i); });
+  }
+  if (w.kind === 'xyPad') {
+    w.mappingX = { type: 'osc', address: `/xy${num}/x` };
+    w.mappingY = { type: 'osc', address: `/xy${num}/y` };
+  }
+  if (w.mapping && w.mapping.type === 'midi') w.mapping = { type: 'osc', address: `/${w.label}` };
+}
 
 function nextUniqueLabel(project: Project, kind: WidgetKind): string {
   const prefix = KIND_LABEL_PREFIX[kind] ?? kind;
@@ -36,6 +54,7 @@ export interface LayoutSlice {
 
   loadProject: (project: Project) => void;
   setProjectName: (name: string) => void;
+  setStartInLive: (on: boolean) => void;
   setProjectFrameRate: (fps: NonNullable<Project['frameRate']>) => void;
   setPageSize: (pageId: string, width: number, height: number) => void;
   setPageLiveOffset: (pageId: string, x: number, y: number) => void;
@@ -72,9 +91,25 @@ export interface LayoutSlice {
     routerId: string;
     // A protocol source instead of a widget cell — this is how MIDI/OSC learn
     // binds, so a learned controller is an ordinary router row like any other.
-    input?: { inputType: RouterInputType; midiChannel?: number; midiNumber?: number; oscAddress?: string };
+    input?: { inputType: RouterInputType; midiChannel?: number; midiNumber?: number; oscAddress?: string; artnetUniverse?: number; artnetChannel?: number };
   }) => void;
+  // Several widget→cell links into one router as ONE undo step — what a Shift
+  // patching session commits when you let go.
+  linkSlaveCells: (routerId: string, links: {
+    slaveWidgetId: string; slaveCellIndex: number;
+    sourceWidgetId: string; sourceCellIndex: number;
+  }[]) => void;
   unlinkSlaveCell: (slaveWidgetId: string, slaveCellIndex: number) => void;
+  // Remove specific router outputs (one undo step). A row left with no outputs
+  // goes too. Used by Shift patching to cut a single cable, ALL links included.
+  removeRouterOutputs: (refs: { routerId: string; rowId: string; outputId: string }[]) => void;
+  updateRouterRow: (routerId: string, rowId: string, patch: Partial<RouterRow>) => void;
+  updateRouterOutput: (routerId: string, rowId: string, outputId: string, patch: Partial<RouterOutput>) => void;
+  splitRouterOutput: (routerId: string, rowId: string, outputId: string) => string;
+  addMainRouterLink: () => string;
+  // A widget lost cell `index` (an alarm deleted, a row removed): links on that
+  // cell go, links on later cells move down one so they keep their target.
+  dropCellAndShiftLinks: (widgetId: string, index: number) => void;
   applyLinksSnapshot: (links: Record<string, RouterRow[]>) => void;
 
   // History & clipboard
@@ -85,7 +120,7 @@ export interface LayoutSlice {
   pasteWidgets: (pageId: string) => void;
 }
 
-function makeDefaultProject(): Project {
+export function makeDefaultProject(): Project {
   const pageId = nanoid();
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -97,12 +132,56 @@ function makeDefaultProject(): Project {
     tapTriggerMapping: null,
     resetTriggerMapping: null,
     activePageId: pageId,
+    mainRouter: { rows: [] },
     pages: [{
       id: pageId, name: 'Page 1', widgets: [],
       backgroundColor: '#000000',
       width: CANVAS_DEFAULT_WIDTH, height: CANVAS_DEFAULT_HEIGHT,
     }],
   };
+}
+
+function applySlaveLink(project: Project, { slaveWidgetId, slaveCellIndex, sourceWidgetId, sourceCellIndex, routerId, input }: {
+  slaveWidgetId: string; slaveCellIndex: number;
+  sourceWidgetId: string; sourceCellIndex: number;
+  routerId: string;
+  input?: { inputType: RouterInputType; midiChannel?: number; midiNumber?: number; oscAddress?: string; artnetUniverse?: number; artnetChannel?: number };
+}): void {
+  mainRouterRows(project);
+  // Drop any existing link targeting this slave cell (in every router, the
+  // main one included), then remove rows left with no outputs — one source
+  // per slave cell.
+  let target: { rows: RouterRow[] } | undefined;
+  for (const r of eachRouter(project)) {
+    for (const row of r.holder.rows) {
+      row.outputs = row.outputs.filter(
+        (o) => !(o.targetWidgetId === slaveWidgetId && (o.targetCellIndex ?? 0) === slaveCellIndex)
+      );
+    }
+    r.holder.rows = r.holder.rows.filter((row) => row.outputs.length > 0);
+    if (r.id === routerId) target = r.holder;
+  }
+  // Unknown router id (deleted widget, stale choice) → the main router.
+  if (!target) target = mainRouterRows(project);
+
+  target.rows.push({
+    id: nanoid(),
+    createdAt: Date.now(),
+    inputType: input?.inputType ?? 'widget',
+    widgetId: input ? '' : sourceWidgetId,
+    cellIndex: input ? 0 : sourceCellIndex,
+    midiChannel: input?.midiChannel,
+    midiNumber: input?.midiNumber,
+    oscAddress: input?.oscAddress,
+    artnetUniverse: input?.artnetUniverse,
+    artnetChannel: input?.artnetChannel,
+    outputs: [{
+      id: nanoid(),
+      mapping: null,
+      targetWidgetId: slaveWidgetId,
+      targetCellIndex: slaveCellIndex,
+    }],
+  });
 }
 
 function touchUpdatedAt(project: Project) {
@@ -153,7 +232,12 @@ function reassignOutputs(widget: Widget, base: number): void {
     return m; // osc unchanged
   };
   const w = widget as { kind: string; cells?: { mapping: Mapping }[]; mapping?: Mapping; mappingX?: Mapping; mappingY?: Mapping };
-  if (w.kind === 'xyPad') { w.mappingX = bump(w.mappingX ?? null); w.mappingY = bump(w.mappingY ?? null); return; }
+  if (w.kind === 'xyPad') {
+    w.mappingX = bump(w.mappingX ?? null); w.mappingY = bump(w.mappingY ?? null);
+    const xy = widget as { points?: { mappingX: Mapping; mappingY: Mapping }[] };
+    if (xy.points) xy.points = xy.points.map((p) => ({ ...p, mappingX: bump(p.mappingX), mappingY: bump(p.mappingY) }));
+    return;
+  }
   if (Array.isArray(w.cells)) { w.cells = w.cells.map((c) => ({ ...c, mapping: bump(c.mapping) })); return; }
   // Keyboard keys are cells too, they just live under a different name.
   const kb = widget as { kind: string; keys?: { mapping: Mapping }[] };
@@ -204,6 +288,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
     s.selectedWidgetId = null;
   }),
 
+  setStartInLive: (on) => set((s) => { s.project.startInLive = on; }),
   setProjectName: (name) => set((s) => {
     s.project.name = name;
     touchUpdatedAt(s.project);
@@ -308,6 +393,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
       const widget = makeDefaultWidget(id, kind, maxZIndex(page) + 1, baseCC);
       widget.label = nextUniqueLabel(s.project, kind);
       applyDefaultCellLabels(widget as Widget);
+      defaultToOsc(widget as Widget);
       page.widgets.push(widget as Widget);
       s.selectedWidgetId = id;
       touchUpdatedAt(s.project);
@@ -412,6 +498,11 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
       );
     }
 
+    // Cells added to an OSC bank get OSC addresses, not the MIDI defaults.
+    if (widget.outputProtocol === 'osc') {
+      const num = widgetLabelNum(widget.label);
+      (newCells as { mapping: unknown }[]).forEach((c, i) => { if (i >= oldCells.length) c.mapping = defaultOscMapping(widget.kind, num, i); });
+    }
     Object.assign(widget, { countX, countY, cells: newCells });
     touchUpdatedAt(s.project);
   }),
@@ -458,44 +549,20 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
     touchUpdatedAt(s.project);
   }),
 
-  linkSlaveCell: ({ slaveWidgetId, slaveCellIndex, sourceWidgetId, sourceCellIndex, routerId, input }) => set((s) => {
+  linkSlaveCell: (params) => set((s) => {
     const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
     s.projectHistory.push(snapshot);
     if (s.projectHistory.length > 50) s.projectHistory.shift();
+    applySlaveLink(s.project, params);
+    touchUpdatedAt(s.project);
+  }),
 
-    // Drop any existing link targeting this slave cell (across every router),
-    // then remove rows left with no outputs — one-row-per-slave-cell model.
-    let targetRouter: RouterWidget | undefined;
-    for (const page of s.project.pages) {
-      for (const w of page.widgets) {
-        if (w.kind !== 'router') continue;
-        const router = w as RouterWidget;
-        for (const row of router.rows) {
-          row.outputs = row.outputs.filter(
-            (o) => !(o.targetWidgetId === slaveWidgetId && (o.targetCellIndex ?? 0) === slaveCellIndex)
-          );
-        }
-        router.rows = router.rows.filter((r) => r.outputs.length > 0);
-        if (router.id === routerId) targetRouter = router;
-      }
-    }
-    if (!targetRouter) return;
-
-    targetRouter.rows.push({
-      id: nanoid(),
-      inputType: input?.inputType ?? 'widget',
-      widgetId: input ? '' : sourceWidgetId,
-      cellIndex: input ? 0 : sourceCellIndex,
-      midiChannel: input?.midiChannel,
-      midiNumber: input?.midiNumber,
-      oscAddress: input?.oscAddress,
-      outputs: [{
-        id: nanoid(),
-        mapping: null,
-        targetWidgetId: slaveWidgetId,
-        targetCellIndex: slaveCellIndex,
-      }],
-    });
+  linkSlaveCells: (routerId, links) => set((s) => {
+    if (links.length === 0) return;
+    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
+    s.projectHistory.push(snapshot);
+    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    for (const l of links) applySlaveLink(s.project, { ...l, routerId });
     touchUpdatedAt(s.project);
   }),
 
@@ -504,12 +571,10 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   // older cue removes links (and their routers' rows) created after it. Full scene
   // recall. Not history-tracked (live recall).
   applyLinksSnapshot: (links) => set((s) => {
-    for (const page of s.project.pages) {
-      for (const w of page.widgets) {
-        if (w.kind !== 'router') continue;
-        const saved = links[w.id];
-        (w as RouterWidget).rows = saved ? (JSON.parse(JSON.stringify(saved)) as RouterRow[]) : [];
-      }
+    mainRouterRows(s.project);
+    for (const r of eachRouter(s.project)) {
+      const saved = links[r.id];
+      r.holder.rows = saved ? (JSON.parse(JSON.stringify(saved)) as RouterRow[]) : [];
     }
     touchUpdatedAt(s.project);
   }),
@@ -519,20 +584,117 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
     s.projectHistory.push(snapshot);
     if (s.projectHistory.length > 50) s.projectHistory.shift();
 
-    for (const page of s.project.pages) {
-      for (const w of page.widgets) {
-        if (w.kind !== 'router') continue;
-        const router = w as RouterWidget;
-        for (const row of router.rows) {
-          row.outputs = row.outputs.filter(
-            (o) => !(o.targetWidgetId === slaveWidgetId && (o.targetCellIndex ?? 0) === slaveCellIndex)
-          );
+    mainRouterRows(s.project);
+    for (const r of eachRouter(s.project)) {
+      for (const row of r.holder.rows) {
+        row.outputs = row.outputs.filter(
+          (o) => !(o.targetWidgetId === slaveWidgetId && (o.targetCellIndex ?? 0) === slaveCellIndex)
+        );
+      }
+      r.holder.rows = r.holder.rows.filter((row) => row.outputs.length > 0);
+    }
+    touchUpdatedAt(s.project);
+  }),
+
+  removeRouterOutputs: (refs) => set((s) => {
+    if (refs.length === 0) return;
+    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
+    s.projectHistory.push(snapshot);
+    if (s.projectHistory.length > 50) s.projectHistory.shift();
+
+    mainRouterRows(s.project);
+    for (const r of eachRouter(s.project)) {
+      const mine = refs.filter((x) => x.routerId === r.id);
+      if (mine.length === 0) continue;
+      r.holder.rows = r.holder.rows.filter((row) => {
+        const cut = mine.filter((x) => x.rowId === row.id).map((x) => x.outputId);
+        if (cut.length === 0) return true;
+        row.outputs = row.outputs.filter((o) => !cut.includes(o.id));
+        return row.outputs.length > 0;
+      });
+    }
+    touchUpdatedAt(s.project);
+  }),
+
+  // ── Router page edits — main router or any router widget, by id ──────────
+  updateRouterRow: (routerId, rowId, patch) => set((s) => {
+    const r = eachRouter(s.project).find((x) => x.id === routerId);
+    const row = r?.holder.rows.find((x) => x.id === rowId);
+    if (!row) return;
+    Object.assign(row, patch);
+    touchUpdatedAt(s.project);
+  }),
+
+  updateRouterOutput: (routerId, rowId, outputId, patch) => set((s) => {
+    const r = eachRouter(s.project).find((x) => x.id === routerId);
+    const out = r?.holder.rows.find((x) => x.id === rowId)?.outputs.find((o) => o.id === outputId);
+    if (!out) return;
+    Object.assign(out, patch);
+    // Pointing at a widget cell: that cell drops any other source (one source
+    // per slave cell, same rule as every other way of linking).
+    if (patch.targetWidgetId) {
+      const tw = out.targetWidgetId, tc = out.targetCellIndex ?? 0;
+      for (const rr of eachRouter(s.project)) {
+        for (const row of rr.holder.rows) {
+          row.outputs = row.outputs.filter((o) => o.id === outputId
+            || !(o.targetWidgetId === tw && (o.targetCellIndex ?? 0) === tc));
         }
-        router.rows = router.rows.filter((r) => r.outputs.length > 0);
+        rr.holder.rows = rr.holder.rows.filter((row) => row.outputs.length > 0);
       }
     }
     touchUpdatedAt(s.project);
   }),
+
+  // A row with several outputs shares ONE source. Changing the source of one
+  // link must not drag its siblings along, so that output moves to a row of
+  // its own first. Returns the row id the output now lives in.
+  splitRouterOutput: (routerId, rowId, outputId) => {
+    let newRowId = rowId;
+    set((s) => {
+      const r = eachRouter(s.project).find((x) => x.id === routerId);
+      const row = r?.holder.rows.find((x) => x.id === rowId);
+      if (!r || !row || row.outputs.length < 2) return;
+      const out = row.outputs.find((o) => o.id === outputId);
+      if (!out) return;
+      row.outputs = row.outputs.filter((o) => o.id !== outputId);
+      newRowId = nanoid();
+      const copy = JSON.parse(JSON.stringify({ ...row, outputs: [] })) as RouterRow;
+      r.holder.rows.push({ ...copy, id: newRowId, createdAt: row.createdAt, outputs: [out] });
+    });
+    return newRowId;
+  },
+
+  dropCellAndShiftLinks: (widgetId, index) => set((s) => {
+    for (const r of eachRouter(s.project)) {
+      r.holder.rows = r.holder.rows.filter((row) => {
+        if (row.widgetId === widgetId && (row.inputType ?? 'widget') === 'widget' && !row.allCells) {
+          if (row.cellIndex === index) return false;
+          if (row.cellIndex > index) row.cellIndex -= 1;
+        }
+        row.outputs = row.outputs.filter((o) => {
+          if (o.targetWidgetId !== widgetId || o.targetAllCells) return true;
+          const c = o.targetCellIndex ?? 0;
+          if (c === index) return false;
+          if (c > index) o.targetCellIndex = c - 1;
+          return true;
+        });
+        return row.outputs.length > 0;
+      });
+    }
+    touchUpdatedAt(s.project);
+  }),
+
+  addMainRouterLink: () => {
+    const rowId = nanoid();
+    set((s) => {
+      mainRouterRows(s.project).rows.push({
+        id: rowId, createdAt: Date.now(), inputType: 'widget', widgetId: '', cellIndex: 0,
+        outputs: [{ id: nanoid(), mapping: null }],
+      });
+      touchUpdatedAt(s.project);
+    });
+    return rowId;
+  },
 
   captureHistory: () => set((s) => {
     const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;

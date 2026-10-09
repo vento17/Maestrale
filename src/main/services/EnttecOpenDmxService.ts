@@ -105,6 +105,9 @@ export class EnttecOpenDmxService {
     this.timer = setInterval(() => this.sendFrame(), FLUSH_INTERVAL_MS);
   }
 
+  // The 512 channels as they are being sent (index 0 = ch 1) — for the recorder.
+  snapshot(): Uint8Array { return new Uint8Array(this.channels); }
+
   setChannel(channel: number, value: number): void {
     if (channel < 1 || channel > 512) return;
     this.channels[channel - 1] = Math.max(0, Math.min(255, Math.round(value)));

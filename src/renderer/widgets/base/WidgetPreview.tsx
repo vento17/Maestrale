@@ -1,6 +1,13 @@
+import DmxRecorderDesign from '../DmxRecorder/DmxRecorderDesign';
+import DmxPlayerDesign from '../DmxPlayer/DmxPlayerDesign';
+import type { DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget } from '../../../shared/types/project';
+import ClockDesign from '../Clock/ClockDesign';
+import DmxMonitorDesign from '../DmxMonitor/DmxMonitorDesign';
 import React from 'react';
-import type { Widget, CuesWidget, TimelineWidget, SpoutInputWidget, NdiInputWidget, SubmastersWidget, RouterWidget, AudioAnalyserWidget, SoundPlayerWidget, LfoWidget, MathWidget, ValueDisplayWidget, MasterLevelWidget, InstanceWidget, ManualWidget, KeyboardWidget } from '../../../shared/types/project';
+import type { Widget, CuesWidget, TimelineWidget, SpoutInputWidget, NdiInputWidget, SubmastersWidget, RouterWidget, AudioAnalyserWidget, SoundPlayerWidget, LfoWidget, MathWidget, ValueDisplayWidget, MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget } from '../../../shared/types/project';
 import SliderBankDesign from '../SliderBank/SliderBankDesign';
+import SketchDesign from '../Sketch/SketchDesign';
+import AudioLevelDesign from '../AudioLevel/AudioLevelDesign';
 import MasterLevelDesign from '../MasterLevel/MasterLevelDesign';
 import InstanceDesign from '../Instance/InstanceDesign';
 import ManualDesign from '../Manual/ManualDesign';
@@ -43,13 +50,20 @@ export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX
       case 'router':        return <RouterDesign widget={widget as RouterWidget} />;
       case 'audioAnalyser':    return <AudioAnalyserDesign widget={widget as AudioAnalyserWidget} />;
       case 'soundPlayer':      return <SoundPlayerDesign widget={widget as SoundPlayerWidget} />;
+      case 'noiseWidget':
       case 'lfoWidget':        return <LfoWidgetDesign widget={widget as LfoWidget} />;
       case 'mathWidget':       return <MathWidgetDesign widget={widget as MathWidget} />;
       case 'valueDisplay':     return <ValueDisplayDesign widget={widget as ValueDisplayWidget} />;
       case 'masterLevel':      return <MasterLevelDesign widget={widget as MasterLevelWidget} />;
+      case 'sketch':           return <SketchDesign widget={widget as SketchWidget} />;
+      case 'audioLevel':       return <AudioLevelDesign widget={widget as AudioLevelWidget} />;
       case 'instance':         return <InstanceDesign widget={widget as InstanceWidget} />;
       case 'keyboard':         return <KeyboardDesign widget={widget as KeyboardWidget} />;
       case 'manual':           return <ManualDesign widget={widget as ManualWidget} />;
+      case 'dmxRecorder':      return <DmxRecorderDesign widget={widget as DmxRecorderWidget} />;
+      case 'dmxPlayer':        return <DmxPlayerDesign widget={widget as DmxPlayerWidget} />;
+      case 'clock':            return <ClockDesign widget={widget as ClockWidget} />;
+      case 'dmxMonitor':       return <DmxMonitorDesign widget={widget as DmxMonitorWidget} />;
       default:                 return null;
     }
   })();

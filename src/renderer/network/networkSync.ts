@@ -1,3 +1,4 @@
+import { xyMapping } from '../../shared/types/project';
 // Renderer-side network sync.
 // When network Live mode is enabled:
 //   - Sends one snapshot to main on start (so new browser clients get layout)
@@ -60,7 +61,7 @@ function handleInteract(payload: NetInteractPayload) {
     if (!widget) continue;
 
     if (widget.kind === 'xyPad') {
-      const mapping = cellIndex === 0 ? widget.mappingX : widget.mappingY;
+      const mapping = xyMapping(widget, cellIndex);
       if (mapping) dispatchValue(mapping, value);
     } else if ('cells' in widget && Array.isArray(widget.cells)) {
       const cell = (widget.cells as { mapping?: unknown }[])[cellIndex];

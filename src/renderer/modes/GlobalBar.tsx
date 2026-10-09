@@ -1,10 +1,14 @@
+import { pal, palRgb, onPalette } from '../palette';
+import { LogBadge } from './LogConsole';
 import React, { useState, useRef, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore, useMode, useIsLocked, useProject, useActivePageId } from '../store';
+import { makeDefaultProject } from '../store/layoutSlice';
 import type { Mapping, MidiMapping, OscMapping } from '../../shared/types/mapping';
 import { bridge } from '../ipc/bridge';
+import { onDmxInput, snapshotDmx, onDmxInputStatus } from '../ipc/dmxInput';
+import { MAIN_ROUTER_ID } from '../widgets/base/routers';
 import { AutoBpmService } from '../audio/AutoBpmService';
-import { listRouters } from '../widgets/base/links';
-import { createRouterOn } from '../widgets/base/createRouter';
 import type { AutoBpmConfig } from '../audio/AutoBpmService';
 
 export const GLOBAL_BAR_HEIGHT = 76; // 50px main bar + 26px BPM strip
@@ -47,6 +51,7 @@ function contrastColor(hex: string): string {
 
 export default function GlobalBar(): React.JSX.Element {
   const mode         = useMode();
+  const liveSidebarOpen = useStore((s) => s.liveSidebarOpen);
   const isLocked     = useIsLocked();
   const project      = useProject();
   const activePageId = useActivePageId();
@@ -62,7 +67,7 @@ export default function GlobalBar(): React.JSX.Element {
     midiClockEnabled, midiLearnTarget,
     learnMode, setLearnMode, learnRouterId,
     connectedProtocols, networkEnabled,
-  } = useStore((s) => ({
+  } = useStore(useShallow((s) => ({
     setMode:                 s.setMode,
     loadProject:             s.loadProject,
     toggleLock:              s.toggleLock,
@@ -95,32 +100,20 @@ export default function GlobalBar(): React.JSX.Element {
     setLearnMode:            s.setLearnMode,
     connectedProtocols:      s.connectedProtocols,
     networkEnabled:          s.networkEnabled,
-  }));
+  })));
 
-  // Same test the right-click Learn entry uses: configured in Settings OR
-  // actually connected. MIDI learn listens on the input port, so either entry
-  // counts.
-  const hasMidiConn = !!connectedProtocols['midiInput'] || !!connectedProtocols['midi'] ||
-    project.connections.some((c) => c.type === 'midiInput' || c.type === 'midi');
-  const hasOscConn  = !!connectedProtocols['osc'] ||
-    project.connections.some((c) => c.type === 'osc');
 
-  // Learn mode asks which router the pass should fill before it starts
-  // listening, so a patching session ends up in one place instead of scattering
-  // rows across whichever router happened to be nearest each cell.
-  const [learnPick, setLearnPick] = useState<'midi' | 'osc' | null>(null);
-  const learnRouterLabel = project.pages.flatMap((p) => p.widgets)
-    .find((w) => w.id === learnRouterId)?.label ?? '?';
+  const routerPageOpen = useStore((s) => s.routerPageOpen);
+  const learnRouterLabel = learnRouterId === MAIN_ROUTER_ID ? 'router'
+    : project.pages.flatMap((p) => p.widgets).find((w) => w.id === learnRouterId)?.label ?? 'router';
 
+  // Learned rows always go into the main router — no router to pick.
   function toggleLearn(protocol: 'midi' | 'osc') {
-    if (learnMode === protocol) { setLearnMode(null); setLearnPick(null); return; }
-    setLearnPick(protocol);
+    if (learnMode === protocol) { setLearnMode(null); return; }
+    setLearnMode(protocol, MAIN_ROUTER_ID);
   }
 
-  function chooseLearnRouter(protocol: 'midi' | 'osc', routerId: string) {
-    setLearnMode(protocol, routerId);
-    setLearnPick(null);
-  }
+
 
   const pages    = project.pages;
   const canAdd   = pages.length < MAX_PAGES;
@@ -231,40 +224,24 @@ export default function GlobalBar(): React.JSX.Element {
 
     // The row needs a router to live in. Prefer one on the target's own page,
     // else any router in the project, else make one.
-    function routerFor(pageId: string, widgetId: string): string | null {
-      const { project } = useStore.getState();
-      const ownPage = project.pages.find((p) => p.widgets.some((w) => w.id === widgetId))
-                   ?? project.pages.find((p) => p.id === pageId);
-      const onPage = ownPage?.widgets.find((w) => w.kind === 'router');
-      if (onPage) return onPage.id;
-      const anywhere = project.pages.flatMap((p) => p.widgets).find((w) => w.kind === 'router');
-      if (anywhere) return anywhere.id;
-      const host = ownPage?.id ?? pageId;
-      if (!host) return null;
-      const id = useStore.getState().addWidget(host, 'router');
-      const fresh = useStore.getState();
-      const page = fresh.project.pages.find((p) => p.id === host);
-      const created = page?.widgets.find((w) => w.id === id);
-      if (page && created) {
-        fresh.updateWidgetRect(host, id, {
-          x: Math.max(0, page.width - created.rect.width - 16),
-          y: Math.max(0, page.height - created.rect.height - 16),
-        });
-      }
-      return id;
+    // Fallback for a target armed without a router: the main router.
+    function routerFor(): string {
+      return MAIN_ROUTER_ID;
     }
 
     function bind(t: NonNullable<typeof midiLearnTarget>, input: {
-      inputType: 'midiCC' | 'midiNote' | 'osc';
+      inputType: 'midiCC' | 'midiNote' | 'osc' | 'artnet' | 'sacn';
       midiChannel?: number; midiNumber?: number; oscAddress?: string;
+      artnetUniverse?: number; artnetChannel?: number;
     }) {
       // The router was chosen up front (right-click Learn, or the header learn
       // buttons), so every row of one patching pass lands in the same place.
       // routerFor() is only the fallback for a target armed without a choice.
       const chosen = t.routerId
-        && useStore.getState().project.pages.some((p) => p.widgets.some((w) => w.id === t.routerId))
+        && (t.routerId === MAIN_ROUTER_ID
+          || useStore.getState().project.pages.some((p) => p.widgets.some((w) => w.id === t.routerId)))
         ? t.routerId : null;
-      const routerId = chosen ?? routerFor(t.pageId, t.widgetId);
+      const routerId = chosen ?? routerFor();
       if (!routerId) return;
       useStore.getState().linkSlaveCell({
         slaveWidgetId: t.widgetId, slaveCellIndex: t.cellIndex,
@@ -272,6 +249,24 @@ export default function GlobalBar(): React.JSX.Element {
         routerId, input,
       });
       useStore.getState().setMidiLearnTarget(null);
+    }
+
+    // Art-Net: a console streams every channel all the time, so "the first
+    // message" means nothing. Learn binds the first channel that MOVES by a
+    // real amount (≥ 20 of 255) from where it was when learn was armed.
+    if (protocol === 'artnet' || protocol === 'sacn') {
+      const base = snapshotDmx();
+      return onDmxInput((changes) => {
+        const t = useStore.getState().midiLearnTarget;
+        if (!t || t.protocol !== protocol || t.mappingKey) return;
+        for (const c of changes) {
+          if (c.protocol !== protocol || c.initial) continue;
+          const was = base.get(`${protocol}:${c.universe}`)?.[c.channel] ?? 0;
+          if (Math.abs(c.value - was) < 20) continue;
+          bind(t, { inputType: protocol, artnetUniverse: c.universe, artnetChannel: c.channel });
+          return;
+        }
+      });
     }
 
     if (protocol === 'osc') {
@@ -317,12 +312,19 @@ export default function GlobalBar(): React.JSX.Element {
   const modeRef       = useRef(mode);
   const activePgRef   = useRef(activePageId);
   const isLockedKbRef = useRef(isLocked);
+  const saveRef = useRef<(as?: boolean) => Promise<void>>(async () => {});
   modeRef.current       = mode;
   activePgRef.current   = activePageId;
   isLockedKbRef.current = isLocked;
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Ctrl+S save, Ctrl+Shift+S save as — anywhere, even while typing.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (!isLockedKbRef.current) void saveRef.current(e.shiftKey);
+        return;
+      }
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase() ?? '';
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       if (e.key === 'F1') {
@@ -469,8 +471,20 @@ export default function GlobalBar(): React.JSX.Element {
     return () => { offOsc(); offMidi(); };
   }, []);
 
-  async function handleSave() {
-    await bridge.invoke('tr:project:save', project);
+  async function handleSave(as = false) {
+    const st = useStore.getState();
+    const res = await bridge.invoke(as ? 'tr:project:save' : 'tr:project:saveQuick', st.project);
+    if (res?.ok) st.addLog('info', `Saved ${res.path}`);
+  }
+  saveRef.current = handleSave;
+
+
+  // New: a blank project. Asks first — there is no undo for this.
+  const [askNew, setAskNew] = useState(false);
+  function handleNew() {
+    void bridge.invoke('tr:project:forget', undefined as never);
+    loadProject(makeDefaultProject());
+    setAskNew(false);
   }
 
   async function handleLoad() {
@@ -516,8 +530,29 @@ export default function GlobalBar(): React.JSX.Element {
         )}
 
         <div style={styles.sep} />
-        <Btn onClick={handleSave} disabled={isLocked}>Save</Btn>
+        <Btn onClick={() => setAskNew(true)} disabled={isLocked}>New</Btn>
+        <span title="Ctrl+S save · Ctrl+Shift+S save as (Shift+click)">
+          <Btn onClick={(e?: React.MouseEvent) => void handleSave(!!e?.shiftKey)} disabled={isLocked}>Save</Btn>
+        </span>
         <Btn onClick={handleLoad} disabled={isLocked}>Load</Btn>
+        {askNew && (
+          <div onPointerDown={() => setAskNew(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => { if (e.key === 'Escape') setAskNew(false); if (e.key === 'Enter') handleNew(); }}
+              style={{ background: '#151515', border: '1px solid #333', borderRadius: 6, padding: '18px 20px', width: 380, fontFamily: 'inherit', color: '#ddd' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Start a new project from scratch?</div>
+              <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>Unsaved changes to the current project will be lost.</div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <Btn onClick={() => setAskNew(false)}>Cancel</Btn>
+                <button autoFocus onClick={handleNew}
+                  style={{ padding: '5px 14px', borderRadius: 3, cursor: 'pointer', background: 'var(--lf-orange)', color: '#000', border: 'none', fontWeight: 700, fontFamily: 'inherit' }}>
+                  New project
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Learn mode — two half-height buttons stacked into one Btn slot.
             Arms the whole surface so cells can be patched by tapping them
@@ -529,7 +564,7 @@ export default function GlobalBar(): React.JSX.Element {
             on={learnMode === 'midi'}
             title={learnMode === 'midi'
               ? `Learn mode ON — rows go into ${learnRouterLabel}. Tap a cell, move the control. Esc to exit.`
-              : 'Learn mode (MIDI): pick a router, then tap a cell and move the physical control.'}
+              : 'Learn mode (MIDI): tap a cell, move the physical control. Rows go into the main router.'}
             onClick={() => toggleLearn('midi')}
           />
           <LearnBtn
@@ -537,25 +572,11 @@ export default function GlobalBar(): React.JSX.Element {
             on={learnMode === 'osc'}
             title={learnMode === 'osc'
               ? `Learn mode ON — rows go into ${learnRouterLabel}. Tap a cell, send the message. Esc to exit.`
-              : 'Learn mode (OSC): pick a router, then tap a cell and send the OSC message.'}
+              : 'Learn mode (OSC): tap a cell, send the OSC message. Rows go into the main router.'}
             onClick={() => toggleLearn('osc')}
           />
-          {learnPick && (
-            <LearnRouterPicker
-              protocol={learnPick}
-              routers={listRouters(project)}
-              showPage={project.pages.length > 1}
-              warn={learnPick === 'midi' ? !hasMidiConn : !hasOscConn}
-              onPick={(id) => chooseLearnRouter(learnPick, id)}
-              onNew={() => {
-                const pageId = activePageId ?? project.pages[0]?.id;
-                if (!pageId) return;
-                chooseLearnRouter(learnPick, createRouterOn(pageId));
-              }}
-              onCancel={() => setLearnPick(null)}
-            />
-          )}
         </div>
+
 
         {/* Center: pages (absolutely positioned within row 1) */}
         <div style={styles.pageCenter}>
@@ -637,7 +658,7 @@ export default function GlobalBar(): React.JSX.Element {
                 page {idx + 1} · {pg?.name ?? ''}
               </div>
               <div style={{ height: 1, background: '#3a3a3a', margin: '4px 0' }} />
-              <button style={{ ...item, color: canRemove ? '#ff6666' : '#555' }}
+              <button style={{ ...item, color: canRemove ? pal('#ffad66') : '#555' }}
                 disabled={!canRemove}
                 onClick={() => {
                   if (!canRemove) return;
@@ -688,7 +709,7 @@ export default function GlobalBar(): React.JSX.Element {
               {cur && (
                 <>
                   <div style={{ height: 1, background: '#3a3a3a', margin: '4px 0' }} />
-                  <button style={{ ...item, color: '#ff6666' }}
+                  <button style={{ ...item, color: pal('#ffad66') }}
                     onClick={() => { setTransportMapping(tMenu.key, null); setTMenu(null); }}>
                     ✕ Clear mapping
                   </button>
@@ -700,6 +721,7 @@ export default function GlobalBar(): React.JSX.Element {
 
         {/* Right spacer */}
         <div style={{ flex: 1 }} />
+
 
         {/* Reset — a second instance of the BPM-row ↺, up here at play/stop size
             so it can be hit without looking down at the smaller strip. */}
@@ -723,7 +745,7 @@ export default function GlobalBar(): React.JSX.Element {
         >▶</button>
         <button
           style={{ ...styles.tapBtn, minWidth: 30,
-            ...(isGlobalPlaying ? { background: 'rgba(255,80,80,0.18)', border: '1px solid rgba(255,80,80,0.5)', color: 'rgba(255,130,130,1)' } : { opacity: 0.45 }),
+            ...(isGlobalPlaying ? { background: `rgba(${palRgb('#ffa250')},0.18)`, border: `1px solid rgba(${palRgb('#ffa250')},0.5)`, color: `rgba(${palRgb('#ffbc82')},1)` } : { opacity: 0.45 }),
             ...(tLearn?.key === 'stop' ? styles.learnArmed : {}) }}
           title={transportTitle('stop', 'Stop all widgets')}
           onContextMenu={transportCtx('stop')}
@@ -781,7 +803,7 @@ export default function GlobalBar(): React.JSX.Element {
           onChange={(e) => setBpmInput(e.target.value)}
           onBlur={(e) => commitBpm(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && commitBpm(bpmInput)}
-          style={{ ...styles.bpmRowInput, ...(bpmMode === 'auto' && autoBpmStatus.locked ? { color: '#4efa6a' } : {}) }}
+          style={{ ...styles.bpmRowInput, ...(bpmMode === 'auto' && autoBpmStatus.locked ? { color: pal('#7ec5ca') } : {}) }}
           readOnly={bpmMode === 'auto' && autoBpmStatus.locked}
         />
         <span style={styles.bpmLabel}>BPM</span>
@@ -828,13 +850,49 @@ export default function GlobalBar(): React.JSX.Element {
 
         <div style={{ flex: 1 }} />
 
+        {/* Router page — every link in the project, as one table. Lives with the
+            protocol badges: it is about where signals go. */}
+        <button
+          onClick={() => useStore.getState().setRouterPageOpen(!routerPageOpen)}
+          title="Router — every link in one table (search, filter, edit)"
+          style={{
+            display: 'flex', alignItems: 'center', height: 20, padding: '0 8px', marginRight: 2,
+            cursor: 'pointer', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, letterSpacing: 1,
+            background: 'none', border: 'none', color: pal('#ff8a1f'),
+            textDecoration: routerPageOpen ? 'underline' : 'none', textUnderlineOffset: 4,
+          }}
+        >
+          Router
+        </button>
+        <LogBadge />
+        {/* space · grey rule · space, then the protocols that light up when on */}
+        <span style={{ width: 1, height: 16, background: '#3a3a3a', margin: '0 10px' }} />
+
         {/* All protocols + network at a glance: white = connected, grey = not */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           {PROTO_BADGES.map((b) => (
             <StatusBadge key={b.type} label={b.label} connected={!!connectedProtocols[b.key]} />
           ))}
+          <ArtNetInBadge />
+          <SacnInBadge />
           <StatusBadge label="NET" connected={networkEnabled} />
         </div>
+        {mode === 'live' && (
+          <>
+            <span style={{ width: 1, height: 16, background: '#3a3a3a', margin: '0 10px' }} />
+            {/* Live params panel on the right — the arrow lives up here, so the
+                canvas has no corner taken by it. */}
+            <button
+              title={liveSidebarOpen ? 'Close live params' : 'Open live params'}
+              onClick={() => useStore.getState().setLiveSidebarOpen(!liveSidebarOpen)}
+              style={{
+                width: 24, height: 20, padding: 0, borderRadius: 3, cursor: 'pointer', fontSize: 10, lineHeight: 1,
+                background: liveSidebarOpen ? 'rgba(255,255,255,0.12)' : 'none', color: liveSidebarOpen ? '#fff' : '#888',
+                border: '1px solid #3a3a3a',
+              }}
+            >{liveSidebarOpen ? '▶' : '◀'}</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -849,6 +907,22 @@ const PROTO_BADGES: { type: string; label: string; key: string }[] = [
   { type: 'sacn',      label: 'sACN', key: 'sacn' },
   { type: 'enttecDmx', label: 'DMX',  key: 'enttec' },
 ];
+
+// Art-Net input: lit while packets are arriving, so "is the console reaching
+// me?" is answered from the top bar.
+function ArtNetInBadge(): React.JSX.Element {
+  const [pps, setPps] = useState<number | null>(null);
+  useEffect(() => onDmxInputStatus((s) => { if (s.protocol === 'artnet') setPps(s.listening ? s.packetsPerSec : null); }), []);
+  return <StatusBadge label={pps ? `A·IN ${pps}` : 'A·IN'} connected={!!pps} />;
+}
+
+function SacnInBadge(): React.JSX.Element | null {
+  const [pps, setPps] = useState<number | null>(null);
+  const on = useStore((s) => s.project.connections.some((c) => c.type === 'sacnInput' && c.enabled));
+  useEffect(() => onDmxInputStatus((s) => { if (s.protocol === 'sacn') setPps(s.listening ? s.packetsPerSec : null); }), []);
+  if (!on) return null;
+  return <StatusBadge label={pps ? `S·IN ${pps}` : 'S·IN'} connected={!!pps} />;
+}
 
 function StatusBadge({ label, connected }: { label: string; connected: boolean }): React.JSX.Element {
   return (
@@ -892,7 +966,7 @@ function AutoBpmControls({ status, config, devices, deviceId, error, onDeviceCha
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showConfig]);
 
-  const dotColor = error ? '#ff4444' : status.locked ? '#4efa6a' : '#ffaa22';
+  const dotColor = error ? pal('#ff9b44') : status.locked ? pal('#7ec5ca') : pal('#ff8922');
   const dotTitle = error ? `Error: ${error}` : status.locked ? `Locked · conf ${(status.confidence*100).toFixed(0)}%` : 'Acquiring…';
   const confPct = Math.round(status.confidence * 100);
 
@@ -928,7 +1002,7 @@ function AutoBpmControls({ status, config, devices, deviceId, error, onDeviceCha
 
       {/* Drop armed indicator */}
       {status.dropArmed && (
-        <span style={{ fontSize: 9, color: '#ffaa22', padding: '0 3px', fontWeight: 700, letterSpacing: '0.05em', animation: 'none' }}>
+        <span style={{ fontSize: 9, color: pal('#ff8922'), padding: '0 3px', fontWeight: 700, letterSpacing: '0.05em', animation: 'none' }}>
           DROP
         </span>
       )}
@@ -1139,72 +1213,6 @@ function Btn({
 // Drops under the two learn buttons. Same question the right-click Learn entry
 // asks, so both routes into learn behave alike.
 
-function LearnRouterPicker({ protocol, routers, showPage, warn, onPick, onNew, onCancel }: {
-  protocol: 'midi' | 'osc';
-  routers: { id: string; label: string; pageName: string }[];
-  showPage: boolean;
-  warn: boolean;
-  onPick: (routerId: string) => void;
-  onNew: () => void;
-  onCancel: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function away(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) onCancel();
-    }
-    function esc(e: KeyboardEvent) { if (e.key === 'Escape') onCancel(); }
-    // Deferred: the click that opened the picker is still travelling.
-    const t = setTimeout(() => document.addEventListener('mousedown', away), 0);
-    window.addEventListener('keydown', esc, true);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('mousedown', away);
-      window.removeEventListener('keydown', esc, true);
-    };
-  }, [onCancel]);
-
-  const item: React.CSSProperties = {
-    display: 'block', width: '100%', minHeight: 34, padding: '8px 14px',
-    background: 'none', border: 'none', cursor: 'pointer',
-    fontSize: 13, color: '#ccc', textAlign: 'left', fontFamily: 'monospace',
-  };
-
-  return (
-    <div
-      ref={ref}
-      style={{
-        position: 'absolute', top: 46, left: 0, zIndex: 9999,
-        background: '#1a1a1a', border: '1px solid #3a3a3a', borderRadius: 6,
-        padding: '6px 0', minWidth: 240, maxHeight: '60vh', overflowY: 'auto',
-        boxShadow: '0 6px 28px rgba(0,0,0,0.75)',
-      }}
-    >
-      <div style={{ padding: '8px 14px', color: '#8a8a8a', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>
-        learn {protocol} → put rows in
-      </div>
-      {warn && (
-        <div style={{ padding: '4px 14px 8px', color: '#e0a030', fontSize: 11, fontFamily: 'monospace' }}>
-          no {protocol.toUpperCase()} connection configured — nothing will arrive
-        </div>
-      )}
-      <div style={{ height: 1, background: '#3a3a3a', margin: '4px 0' }} />
-      {routers.length === 0 && (
-        <div style={{ padding: '8px 14px', color: '#555', fontSize: 12, fontFamily: 'monospace' }}>
-          no router yet
-        </div>
-      )}
-      {routers.map((r) => (
-        <button key={r.id} style={item} onClick={() => onPick(r.id)}>
-          {r.label}
-          {showPage && <span style={{ color: '#666' }}> · {r.pageName}</span>}
-        </button>
-      ))}
-      <div style={{ height: 1, background: '#3a3a3a', margin: '4px 0' }} />
-      <button style={{ ...item, color: '#66cc99' }} onClick={onNew}>＋ New router</button>
-    </div>
-  );
-}
 
 // ─── Learn-mode button ────────────────────────────────────────────────────────
 // Half height, so two of them stack into the same footprint as one Save/Load.
@@ -1224,7 +1232,7 @@ function LearnBtn({ label, on, disabled, title, onClick }: {
         fontSize: 10,
         letterSpacing: '0.12em',
         fontWeight: 700,
-        ...(on ? { background: '#ff8c00', border: '1px solid #ff8c00', color: '#000' } : {}),
+        ...(on ? { background: pal('#ff7700'), border: `1px solid ${pal('#ff7700')}`, color: '#000' } : {}),
         ...(disabled ? styles.btnDisabled : {}),
       }}
     >
@@ -1235,7 +1243,7 @@ function LearnBtn({ label, on, disabled, title, onClick }: {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles: Record<string, React.CSSProperties> = {
+const make_styles = (): Record<string, React.CSSProperties> => ({
   outerBar: {
     display: 'flex',
     flexDirection: 'column',
@@ -1311,8 +1319,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--color-accent)',
   },
   learnArmed: {
-    background: '#ff8c00',
-    border: '1px solid #ff8c00',
+    background: pal('#ff7700'),
+    border: `1px solid ${pal('#ff7700')}`,
     color: '#000',
   },
   btnDisabled: {
@@ -1488,4 +1496,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--color-accent)',
     color: '#000',
   },
-};
+});
+let styles: Record<string, React.CSSProperties> = make_styles();
+onPalette(() => { styles = make_styles(); });

@@ -1,3 +1,4 @@
+import { xyMapping } from '../../shared/types/project';
 import type { Mapping } from '../../shared/types/mapping';
 import { useStore } from '../store';
 import { dispatchValue } from './dispatch';
@@ -38,10 +39,7 @@ export function resendProtocol(protocol: string): void {
           }
           break;
         case 'xyPad': {
-          const x = wr.cells[0]?.value;
-          const y = wr.cells[1]?.value;
-          if (x !== undefined) send(w.mappingX, x);
-          if (y !== undefined) send(w.mappingY, y);
+          wr.cells.forEach((c, i) => { if (c?.value !== undefined) send(xyMapping(w, i), c.value); });
           break;
         }
         case 'buttonGrid':

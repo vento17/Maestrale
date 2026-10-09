@@ -13,6 +13,8 @@ import type { OscFeedbackMessage, MidiPortInfo } from './runtime';
 export interface IpcChannels {
   // Project
   'tr:project:save':          { req: Project;                    res: { ok: boolean; path: string } };
+  'tr:project:saveQuick':     { req: Project;                    res: { ok: boolean; path: string } };
+  'tr:project:forget':        { req: void;                       res: void };
   'tr:project:load':          { req: void;                       res: Project | null };
   'tr:project:export':        { req: Project;                    res: { ok: boolean; path: string } };
   'tr:project:backup':        { req: Project;                    res: { ok: boolean; path: string } };
@@ -20,6 +22,7 @@ export interface IpcChannels {
   // with the time it was written; recoverClear drops it once the work is safe.
   'tr:project:autosave':      { req: Project;                    res: { ok: boolean } };
   'tr:project:recoverRead':   { req: void;                       res: { project: Project; savedAt: string } | null };
+  'tr:project:openLast':      { req: void;                       res: { project: Project; path: string; from: 'saved' | 'autosave' } | null };
   'tr:project:recoverClear':  { req: void;                       res: { ok: boolean } };
 
   // Window
@@ -62,6 +65,39 @@ export interface IpcChannels {
   'tr:artnet:configure':      { req: ArtNetConfigPayload;        res: { ok: boolean } };
   'tr:artnet:sendChannel':    { req: ArtNetChannelPayload;       res: void };
   'tr:artnet:sendUniverse':   { req: ArtNetUniversePayload;      res: void };
+  // Art-Net INPUT (receive on UDP 6454)
+  'tr:artnet:listen':         { req: { bindHost?: string; universes?: number[] }; res: { ok: boolean; error?: string } };
+  'tr:artnet:stopListen':     { req: void;                       res: { ok: boolean } };
+  'tr:sacn:listen':           { req: { bindHost?: string; universes?: number[] }; res: { ok: boolean; error?: string } };
+  'tr:sacn:stopListen':       { req: void;                       res: { ok: boolean } };
+
+  // DMX stream input (main → renderer, event). Shared by every DMX-over-IP
+  // input — Art-Net now, sACN next — so consumers don't care which it was.
+  'tr:dmxIn:frame':           { req: never;                      res: DmxInputPayload };
+  'tr:dmxIn:status':          { req: never;                      res: DmxInputStatusPayload };
+
+  // DMX stream recorder / player (takes live in Save/Recordings)
+  'tr:dmxRec:start':          { req: { name?: string; universes?: number[]; protocol?: DmxRecSource }; res: { ok: boolean; takeId?: string; error?: string } };
+  'tr:dmxRec:stop':           { req: void;                       res: { ok: boolean; take?: DmxTakeInfo } };
+  'tr:dmxRec:list':           { req: void;                       res: DmxTakeInfo[] };
+  'tr:dmxRec:rename':         { req: { takeId: string; name: string }; res: { ok: boolean } };
+  'tr:dmxRec:delete':         { req: { takeId: string };         res: { ok: boolean } };
+  'tr:dmxRec:getFolders':     { req: void;                       res: { record: string; play: string } };
+  'tr:dmxRec:setFolders':     { req: { record?: string; play?: string }; res: { ok: boolean; error?: string; record: string; play: string } };
+  'tr:dmxRec:pickFolder':     { req: { title?: string; current?: string }; res: string | null };
+  'tr:dmxRec:openFolder':     { req: { which: 'record' | 'play' }; res: { ok: boolean } };
+  'tr:dmxRec:status':         { req: never;                      res: DmxRecStatus };
+  'tr:dmxPlay:play':          { req: { playerId: string; config: DmxPlayConfig; fromMs?: number }; res: { ok: boolean; error?: string } };
+  'tr:dmxPlay:pause':         { req: { playerId: string };       res: { ok: boolean } };
+  'tr:dmxPlay:stop':          { req: { playerId: string };       res: { ok: boolean } };
+  'tr:dmxPlay:seek':          { req: { playerId: string; ms: number }; res: { ok: boolean } };
+  'tr:dmxPlay:configure':     { req: { playerId: string; config: DmxPlayConfig }; res: { ok: boolean } };
+  'tr:dmxPlay:status':        { req: never;                      res: DmxPlayStatus };
+
+  // DMX monitor: watch one universe IN (optionally one sender) or OUT
+  // (optionally one destination); frames arrive at ~20 Hz, only when changed.
+  'tr:dmxMon:watch':          { req: DmxMonitorWatch | { watcherId: string; off: true }; res: { ok: boolean } };
+  'tr:dmxMon:frame':          { req: never;                      res: { watcherId: string; data: number[] } };
 
   // sACN / E1.31
   'tr:sacn:configure':        { req: SacnConfigPayload;          res: { ok: boolean } };
@@ -143,6 +179,81 @@ export interface OscSendPayload {
 }
 
 // ─── Art-Net Payloads ─────────────────────────────────────────────────────────
+
+export type DmxInputProtocol = 'artnet' | 'sacn';
+
+export interface DmxTakeInfo {
+  id: string;
+  name: string;
+  createdAt: number;     // ms epoch
+  durationMs: number;
+  universes: number[];
+  bytes: number;
+  protocol: DmxInputProtocol;
+  source?: DmxRecSource;  // what it was recorded from
+}
+
+// What the DMX recorder records: an input, or what LiveForge itself sends.
+export type DmxRecSource = 'artnet' | 'sacn' | 'out-artnet' | 'out-sacn' | 'out-enttec';
+
+export interface DmxRecStatus {
+  recording: boolean;
+  takeId: string | null;  // the take being recorded, or the one just finished
+  name: string;
+  elapsedMs: number;
+  bytes: number;
+  universes: number[];
+}
+
+export interface DmxMonitorWatch {
+  watcherId: string;
+  direction: 'in' | 'out';
+  protocol: 'artnet' | 'sacn';
+  universe: number;
+  sourceIp?: string;     // in: only this sender ('' / undefined = everyone)
+  outputId?: string;     // out: only this destination (undefined = all merged)
+}
+
+export interface DmxPlayConfig {
+  takeId: string;
+  loop: boolean;
+  universeOffset: number;          // added to every recorded universe on output
+  protocol: 'artnet' | 'sacn';
+  outputId?: string;
+  fadeMs?: number;                 // crossfade from what this player had on output
+}
+
+export interface DmxPlayStatus {
+  playerId: string;
+  takeId: string;
+  playing: boolean;
+  positionMs: number;
+  durationMs: number;
+  ended?: boolean;                 // reached the end by itself (not stopped)
+}
+
+// Channels that changed since the last batch, per universe. `pairs` is flat:
+// [ch, value, ch, value, …] with ch 1–512 and value 0–255. `first` marks the
+// first batch heard from that universe since listening started.
+export interface DmxInputPayload {
+  protocol: DmxInputProtocol;
+  universes: Array<{ universe: number; first: boolean; pairs: number[] }>;
+}
+
+export interface DmxInputStatusPayload {
+  protocol: DmxInputProtocol;
+  listening: boolean;
+  packetsPerSec: number;
+  universes: number[];
+  sources: string[];   // sender IPs heard in the last second
+  // Diagnostics, so "nothing arriving" can say WHERE it stops.
+  error?: string;          // why listening failed (port taken…)
+  bound?: string;          // address:port actually bound
+  otherPerSec?: number;    // UDP on 6454 that was not ArtDmx (polls, replies, other opcodes)
+  ownPerSec?: number;      // ArtDmx from our own output, ignored
+  polls?: string[];        // who sent ArtPoll in the last second (we answered)
+  names?: string[];        // sACN source names heard in the last second
+}
 
 export interface ArtNetConfigPayload {
   outputs: Array<{ id: string; host: string }>;

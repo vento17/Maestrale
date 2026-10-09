@@ -1,5 +1,37 @@
+import { pal } from '../../palette';
+import { MULTI } from '../../theme';
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import type { XYPadWidget } from '../../../shared/types/project';
+import { xyMapping } from '../../../shared/types/project';
+import { nanoid } from 'nanoid';
+
+// Dots after the first get their own colour, so several pan/tilt pairs read apart.
+export const XY_DOT_COLORS = MULTI.slice(1);
+
+// ＋ on the pad: a new dot with the next free CC / channel pair after the last one.
+export function addXYDot(widget: XYPadWidget): void {
+  const st = useStore.getState();
+  const pageId = st.project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;
+  if (!pageId) return;
+  const pts = widget.points ?? [];
+  const n = 1 + pts.length;
+  const step = (m: XYPadWidget['mappingX'], by: number): XYPadWidget['mappingX'] => {
+    if (!m) return m;
+    if (m.type === 'midi') return { ...m, number: (m.number + by) % 128 };
+    if (m.type === 'artnet' || m.type === 'sacn' || m.type === 'enttec') return { ...m, channel: ((m.channel - 1 + by) % 512) + 1 };
+    if (m.type === 'osc') return { ...m, address: `${m.address.replace(/\/\d+$/, '')}/${n + 1}` };
+    return m;
+  };
+  st.updateWidget(pageId, widget.id, { points: [...pts, {
+    id: nanoid(), mappingX: step(widget.mappingX, 2 * n), mappingY: step(widget.mappingY, 2 * n),
+  }] } as never);
+  // Start it near the middle, a little apart from the others, so it shows.
+  const off = ((n % 6) - 2.5) * 0.08;
+  queueMicrotask(() => {
+    useStore.getState().setCellValue(widget.id, 2 * n, Math.max(0, Math.min(1, 0.5 + off)));
+    useStore.getState().setCellValue(widget.id, 2 * n + 1, 0.5);
+  });
+}
 import { useStore, useWidgetRuntime } from '../../store';
 import { dispatchValue } from '../../ipc/dispatch';
 import { clamp } from '../utils';
@@ -7,17 +39,20 @@ import CellLinkMenu from '../base/CellLinkMenu';
 import { useSlavedCells, SLAVE_OUTLINE } from '../base/useSlavedCells';
 
 export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JSX.Element {
-  const { style, mappingX, mappingY, showCrosshair, invertX, invertY } = widget;
+  const { style, showCrosshair, invertX, invertY } = widget;
   const runtime = useWidgetRuntime(widget.id);
   const setCellValue = useStore((s) => s.setCellValue);
   const padRef = useRef<HTMLDivElement>(null);
-  const activePointer = useRef<number | null>(null);
+  // Each finger / the mouse drags the dot it grabbed (the nearest one).
+  const grabbed = useRef(new Map<number, number>());   // pointerId → dot
 
-  const slaved = useSlavedCells(widget.id);       // 0 = X axis, 1 = Y axis
-  const isSlaved = slaved.has(0) || slaved.has(1);
+  const slaved = useSlavedCells(widget.id);       // even = X, odd = Y of each dot
+  const isSlaved = slaved.size > 0;
+  const dots = 1 + (widget.points?.length ?? 0);
+  const dotColor = (k: number): string => (k === 0 ? (runtime?.cells[0]?.feedbackColor ?? style.foregroundColor) : (widget.points?.[k - 1]?.color || XY_DOT_COLORS[(k - 1) % XY_DOT_COLORS.length]));
 
   // Right-click: pick which axis to link, then show the link menu for that cell.
-  const [menu, setMenu] = useState<{ x: number; y: number; axis: 0 | 1 | null } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; axis: number | null } | null>(null);
   useEffect(() => {
     if (!menu) return;
     const handler = () => setMenu(null);
@@ -25,22 +60,39 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
     return () => document.removeEventListener('pointerdown', handler);
   }, [menu]);
 
-  const xVal = runtime?.cells[0]?.value ?? 0.5;
-  const yVal = runtime?.cells[1]?.value ?? 0.5;
-  const xColor = runtime?.cells[0]?.feedbackColor ?? style.foregroundColor;
 
-  const updateFromPoint = useCallback((clientX: number, clientY: number) => {
-    if (!padRef.current) return;
-    const rect = padRef.current.getBoundingClientRect();
+  const toValue = (clientX: number, clientY: number): [number, number] => {
+    const rect = padRef.current!.getBoundingClientRect();
     let nx = clamp((clientX - rect.left) / rect.width, 0, 1);
     let ny = clamp((clientY - rect.top) / rect.height, 0, 1);
     if (invertX) nx = 1 - nx;
     if (!invertY) ny = 1 - ny;
+    return [nx, ny];
+  };
+  // Screen position (0–1, top-left origin) of a dot's current value.
+  const posOf = (k: number): [number, number] => {
+    const x = runtime?.cells[2 * k]?.value ?? 0.5, y = runtime?.cells[2 * k + 1]?.value ?? 0.5;
+    return [invertX ? 1 - x : x, invertY ? y : 1 - y];
+  };
+  const nearestDot = (clientX: number, clientY: number): number => {
+    const rect = padRef.current!.getBoundingClientRect();
+    const px = (clientX - rect.left) / rect.width, py = (clientY - rect.top) / rect.height;
+    let best = 0, bd = Infinity;
+    for (let k = 0; k < dots; k++) {
+      const [x, y] = posOf(k);
+      const d = ((x - px) * rect.width) ** 2 + ((y - py) * rect.height) ** 2;
+      if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+  };
 
+  const updateFromPoint = useCallback((dot: number, clientX: number, clientY: number) => {
+    if (!padRef.current) return;
+    const [nx, ny] = toValue(clientX, clientY);
     // A router link is a second way in, not a lock: both axes stay draggable.
-    setCellValue(widget.id, 0, nx); dispatchValue(mappingX, nx);
-    setCellValue(widget.id, 1, ny); dispatchValue(mappingY, ny);
-  }, [widget.id, mappingX, mappingY, invertX, invertY, setCellValue]);
+    setCellValue(widget.id, 2 * dot, nx); dispatchValue(xyMapping(widget, 2 * dot), nx);
+    setCellValue(widget.id, 2 * dot + 1, ny); dispatchValue(xyMapping(widget, 2 * dot + 1), ny);
+  }, [widget, invertX, invertY, setCellValue]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -52,7 +104,7 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
         cursor: 'crosshair',
         overflow: 'hidden',
         outline: isSlaved ? SLAVE_OUTLINE : undefined,
-        outlineOffset: isSlaved ? -2 : undefined,
+        outlineOffset: isSlaved ? -1 : undefined,
       }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -62,21 +114,20 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
       onPointerDown={(e) => {
         setMenu(null);
         if (e.button !== 0) return;   // right-click → context menu only
-        if (activePointer.current !== null) return;
-        activePointer.current = e.pointerId;
+        const taken = new Set(grabbed.current.values());
+        const dot = nearestDot(e.clientX, e.clientY);
+        if (taken.has(dot)) return;   // another finger has it
+        grabbed.current.set(e.pointerId, dot);
         e.currentTarget.setPointerCapture(e.pointerId);
-        updateFromPoint(e.clientX, e.clientY);
+        updateFromPoint(dot, e.clientX, e.clientY);
       }}
       onPointerMove={(e) => {
-        if (e.pointerId !== activePointer.current) return;
-        updateFromPoint(e.clientX, e.clientY);
+        const dot = grabbed.current.get(e.pointerId);
+        if (dot === undefined) return;
+        updateFromPoint(dot, e.clientX, e.clientY);
       }}
-      onPointerUp={(e) => {
-        if (e.pointerId === activePointer.current) activePointer.current = null;
-      }}
-      onPointerCancel={(e) => {
-        if (e.pointerId === activePointer.current) activePointer.current = null;
-      }}
+      onPointerUp={(e) => { grabbed.current.delete(e.pointerId); }}
+      onPointerCancel={(e) => { grabbed.current.delete(e.pointerId); }}
     >
       {/* Grid */}
       <div style={{
@@ -86,35 +137,36 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
         pointerEvents: 'none',
       }} />
 
-      {/* Crosshair lines */}
-      {showCrosshair && (
+      {/* Crosshair lines (first dot only — with many they would just be noise) */}
+      {showCrosshair && dots === 1 && (
         <>
-          <div style={{
-            position: 'absolute', left: 0, right: 0,
-            top: `${(1 - yVal) * 100}%`, height: 1,
-            background: `${xColor}44`, pointerEvents: 'none',
-          }} />
-          <div style={{
-            position: 'absolute', top: 0, bottom: 0,
-            left: `${xVal * 100}%`, width: 1,
-            background: `${xColor}44`, pointerEvents: 'none',
-          }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, top: `${posOf(0)[1] * 100}%`, height: 1, background: `${dotColor(0)}44`, pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${posOf(0)[0] * 100}%`, width: 1, background: `${dotColor(0)}44`, pointerEvents: 'none' }} />
         </>
       )}
 
-      {/* Dot */}
-      <div style={{
-        position: 'absolute',
-        left: `${xVal * 100}%`,
-        top: `${(1 - yVal) * 100}%`,
-        transform: 'translate(-50%, -50%)',
-        width: 20, height: 20,
-        borderRadius: '50%',
-        background: xColor,
-        boxShadow: `0 0 12px ${xColor}`,
-        pointerEvents: 'none',
-        zIndex: 1,
-      }} />
+      {/* Dots */}
+      {Array.from({ length: dots }, (_, k) => {
+        const [x, y] = posOf(k);
+        const c = dotColor(k);
+        return (
+          <div key={k} style={{
+            position: 'absolute', left: `${x * 100}%`, top: `${y * 100}%`, transform: 'translate(-50%, -50%)',
+            width: 20, height: 20, borderRadius: '50%', background: c, boxShadow: `0 0 12px ${c}`,
+            pointerEvents: 'none', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 700, color: '#000', fontFamily: 'monospace',
+          }}>{dots > 1 ? (k === 0 ? '1' : (widget.points?.[k - 1]?.label || String(k + 1))).slice(0, 2) : ''}</div>
+        );
+      })}
+
+      {/* ＋ adds a dot */}
+      <button title="Add a dot (its own X / Y cells and outputs)"
+        onPointerDown={(e) => { e.stopPropagation(); }}
+        onClick={(e) => { e.stopPropagation(); addXYDot(widget); }}
+        style={{
+          position: 'absolute', top: 4, right: 4, zIndex: 2, width: 22, height: 22, padding: 0, borderRadius: 3,
+          background: 'rgba(0,0,0,0.5)', color: '#aaa', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', fontSize: 13,
+        }}>＋</button>
 
       {style.showLabel && (
         <div style={{
@@ -128,10 +180,14 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
 
       {/* Learn mode only (shown by CSS): the pad is one element but two cells,
           so a tap needs somewhere to say which axis it means. */}
-      <div className="lf-learn-zone" data-lf-widget={widget.id} data-lf-cell={0}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 34 }}>X</div>
-      <div className="lf-learn-zone" data-lf-widget={widget.id} data-lf-cell={1}
-        style={{ position: 'absolute', left: 0, top: 0, bottom: 34, width: 34 }}>Y</div>
+      {Array.from({ length: dots }, (_, k) => (
+        <React.Fragment key={k}>
+          <div className="lf-learn-zone" data-lf-widget={widget.id} data-lf-cell={2 * k}
+            style={{ position: 'absolute', left: `${(k / dots) * 100}%`, width: `${100 / dots}%`, bottom: 0, height: 34 }}>{dots > 1 ? `${k + 1}X` : 'X'}</div>
+          <div className="lf-learn-zone" data-lf-widget={widget.id} data-lf-cell={2 * k + 1}
+            style={{ position: 'absolute', left: 0, top: `${(k / dots) * 100}%`, height: `calc(${100 / dots}% - ${34 / dots}px)`, width: 34 }}>{dots > 1 ? `${k + 1}Y` : 'Y'}</div>
+        </React.Fragment>
+      ))}
 
       {/* Right-click: axis picker → link menu */}
       {menu && menu.axis === null && (
@@ -147,13 +203,13 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
           <div style={{ padding: '4px 12px', color: '#777', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
             link axis
           </div>
-          {([['X axis', 0], ['Y axis', 1]] as [string, 0 | 1][]).map(([label, axis]) => (
+          {Array.from({ length: dots }, (_, k) => [[`${dots > 1 ? `dot ${k + 1} ` : ''}X axis`, 2 * k], [`${dots > 1 ? `dot ${k + 1} ` : ''}Y axis`, 2 * k + 1]] as [string, number][]).flat().map(([label, axis]) => (
             <button
               key={axis}
               style={{
                 display: 'block', width: '100%', padding: '5px 12px', background: 'none',
                 border: 'none', cursor: 'pointer', fontSize: 11,
-                color: slaved.has(axis) ? '#ff6666' : '#ccc', textAlign: 'left', fontFamily: 'inherit',
+                color: slaved.has(axis) ? pal('#ffad66') : '#ccc', textAlign: 'left', fontFamily: 'inherit',
               }}
               onClick={() => setMenu({ ...menu, axis })}
             >

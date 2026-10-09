@@ -1,4 +1,6 @@
+import { pal } from '../../palette';
 import React from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { OutputProtocol } from '../../../shared/types/project';
 import { useStore, useActivePage } from '../../store';
 import NumberInput from './NumberInput';
@@ -16,8 +18,8 @@ class CellEditErrorBoundary extends React.Component<{ onClose: () => void; child
     if (this.state.error) {
       return (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div style={{ background: 'var(--color-surface)', border: '1px solid #cc4444', borderRadius: 8, padding: 24, maxWidth: 400, color: 'var(--color-text)' }}>
-            <div style={{ color: '#cc4444', fontWeight: 600, marginBottom: 8 }}>Could not open cell editor</div>
+          <div style={{ background: 'var(--color-surface)', border: `1px solid ${pal('#db8235')}`, borderRadius: 8, padding: 24, maxWidth: 400, color: 'var(--color-text)' }}>
+            <div style={{ color: pal('#db8235'), fontWeight: 600, marginBottom: 8 }}>Could not open cell editor</div>
             <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 16 }}>{this.state.error}</div>
             <button onClick={this.props.onClose} style={{ padding: '4px 16px', cursor: 'pointer', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)', borderRadius: 4 }}>Close</button>
           </div>
@@ -31,7 +33,7 @@ class CellEditErrorBoundary extends React.Component<{ onClose: () => void; child
 function CellEditModalInner({ widgetId, pageId, onClose }: Props): React.JSX.Element | null {
   // Read widget LIVE from store — no stale snapshot, color updates reflect immediately
   const page = useActivePage();
-  const { updateCell } = useStore((s) => ({ updateCell: s.updateCell }));
+  const { updateCell } = useStore(useShallow((s) => ({ updateCell: s.updateCell })));
 
   const widget = page?.widgets.find((w) => w.id === widgetId);
   // `'cells' in widget` already narrows to the cell-bank widgets (slider/button/knob)

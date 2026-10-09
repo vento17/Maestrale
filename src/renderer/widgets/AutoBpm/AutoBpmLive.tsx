@@ -1,3 +1,4 @@
+import { pal } from '../../palette';
 import React, { useEffect, useRef, useState } from 'react';
 import type { AutoBpmWidget, BeatOutput } from '../../../shared/types/project';
 import { BEAT_DIVISORS } from '../../../shared/types/project';
@@ -118,7 +119,7 @@ export default function AutoBpmLive({ widget }: { widget: AutoBpmWidget }): Reac
         </span>
         <span style={{
           width: 6, height: 6, borderRadius: '50%', flexShrink: 0, display: 'inline-block',
-          background: locked ? '#00cc66' : '#333',
+          background: locked ? pal('#3b8b91') : '#333',
         }} />
       </div>
 

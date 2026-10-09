@@ -1,12 +1,16 @@
+import { pal, palRgb } from '../../palette';
+import { xyMapping } from '../../../shared/types/project';
 import React, { useState, useRef, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type {
   SubmastersWidget, Widget,
   SliderBankWidget, KnobBankWidget, ButtonGridWidget, XYPadWidget,
 } from '../../../shared/types/project';
-import { useStore, useWidgetRuntime, useActivePage } from '../../store';
+import { useStore, useWidgetRuntime } from '../../store';
 import { dispatchValue, dispatchButton } from '../../ipc/dispatch';
 import { cellCount, clamp } from '../utils';
 import CellLinkMenu from '../base/CellLinkMenu';
+import { submasterTargets } from '../base/links';
 import { useSlavedCells, SLAVE_OUTLINE } from '../base/useSlavedCells';
 
 // ─── Dispatch helper (same as CuesLive) ──────────────────────────────────────
@@ -27,8 +31,7 @@ function dispatchCellValue(widget: Widget, cellIndex: number, value: number): vo
     }
     case 'xyPad': {
       const w = widget as XYPadWidget;
-      if (cellIndex === 0) dispatchValue(w.mappingX, value);
-      else dispatchValue(w.mappingY, value);
+      dispatchValue(xyMapping(w, cellIndex), value);
       break;
     }
     default:
@@ -41,13 +44,11 @@ function dispatchCellValue(widget: Widget, cellIndex: number, value: number): vo
 export default function SubmastersLive({ widget }: { widget: SubmastersWidget }): React.JSX.Element {
   const { countX, spacingX, spacingY, style, scenes, mergeMode, linkedWidgetIds } = widget;
 
-  const { updateWidget, activePageId, setCellValue, setButtonActive } = useStore((s) => ({
+  const { updateWidget, setCellValue, setButtonActive } = useStore(useShallow((s) => ({
     updateWidget: s.updateWidget,
-    activePageId: s.activePageId,
     setCellValue: s.setCellValue,
     setButtonActive: s.setButtonActive,
-  }));
-  const activePage = useActivePage();
+  })));
   const widgetRuntime = useWidgetRuntime(widget.id);
 
   const scenesRef = useRef(scenes);
@@ -70,7 +71,9 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
   const preFlashRef = useRef<Record<number, number>>({});
 
   const faderValues = Array.from({ length: countX }, (_, i) => widgetRuntime?.cells[i]?.value ?? 0);
-  const linkedWidgets = activePage?.widgets.filter((w) => linkedWidgetIds.includes(w.id)) ?? [];
+  const project = useStore((s) => s.project);
+  // "All widgets · all pages" by default; narrowed in the settings.
+  const linkedWidgets = submasterTargets(project, { id: widget.id, linkedWidgetIds });
 
   const REC_COL_W = 48;
   const pad = Math.max(spacingX, spacingY);
@@ -129,11 +132,13 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
     if (!recArmed && !delArmed) return;
 
     if (recArmed) {
-      const { runtime: rt, project, activePageId: pid } = useStore.getState();
-      const page = project.pages.find((p) => p.id === pid);
-      if (!page || !pid) return;
+      const { runtime: rt, project } = useStore.getState();
+      // The page this submaster lives on (it may control widgets elsewhere).
+      const pid = project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;
+      if (!pid) return;
       const snapshot: Record<string, number[]> = {};
-      for (const wid of linkedWidgetIds) {
+      for (const lw of submasterTargets(project, { id: widget.id, linkedWidgetIds })) {
+        const wid = lw.id;
         const wr = rt.widgets[wid];
         if (wr) snapshot[wid] = wr.cells.map((c) => c.value);
       }
@@ -142,9 +147,10 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
       setRecArmed(false);
     } else {
       // del armed — clear snapshot
-      if (!activePageId) return;
+      const pid = useStore.getState().project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;
+      if (!pid) return;
       const newScenes = scenes.map((s, i) => i === sceneIdx ? { ...s, snapshot: {} } : s);
-      updateWidget(activePageId, widget.id, { scenes: newScenes } as never);
+      updateWidget(pid, widget.id, { scenes: newScenes } as never);
       setDelArmed(false);
     }
   }
@@ -244,8 +250,8 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
           const isFlashing = flashedScenes.has(i);
 
           let topBg: string;
-          if (recArmed)      topBg = 'rgba(255,50,50,0.45)';
-          else if (delArmed) topBg = 'rgba(255,150,0,0.45)';
+          if (recArmed)      topBg = `rgba(${palRgb('#ff9232')},0.45)`;
+          else if (delArmed) topBg = `rgba(${palRgb('#ff7700')},0.45)`;
           else if (hasData)  topBg = fv > 0.001 ? btnColor : `${btnColor}55`;
           else               topBg = 'rgba(255,255,255,0.07)';
 
@@ -286,7 +292,7 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
                   touchAction: 'none',
                   cursor: 'pointer',
                   outline: slavedCells.has(i) ? SLAVE_OUTLINE : undefined,
-                  outlineOffset: slavedCells.has(i) ? -2 : undefined,
+                  outlineOffset: slavedCells.has(i) ? -1 : undefined,
                 }}
                 onPointerDown={(e) => {
                   // A router link is a second way in, not a lock.
@@ -355,7 +361,7 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
                   touchAction: 'none',
                   border: '1px solid transparent',
                   outline: slavedCells.has(countX + i) ? SLAVE_OUTLINE : undefined,
-                  outlineOffset: slavedCells.has(countX + i) ? -2 : undefined,
+                  outlineOffset: slavedCells.has(countX + i) ? -1 : undefined,
                   transition: 'background 0.08s',
                 }}
               />
@@ -374,16 +380,16 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
           onClick={() => { setRecArmed((v) => !v); setDelArmed(false); }}
           style={{
             flex: 1, borderRadius: 3,
-            background: recArmed ? '#cc1111' : 'rgba(200,30,30,0.15)',
+            background: recArmed ? pal('#cc6811') : `rgba(${palRgb('#c86d1e')},0.15)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', userSelect: 'none',
-            border: `1px solid ${recArmed ? '#ff4444' : '#441111'}`,
+            border: `1px solid ${recArmed ? pal('#ff9b44') : pal('#402915')}`,
             transition: 'all 0.1s',
           }}
         >
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: 1,
-            color: recArmed ? '#ffffff' : '#cc3333',
+            color: recArmed ? '#ffffff' : pal('#d97a26'),
           }}>REC</span>
         </div>
 
@@ -392,16 +398,16 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
           onClick={() => { setDelArmed((v) => !v); setRecArmed(false); }}
           style={{
             flex: 1, borderRadius: 3,
-            background: delArmed ? 'rgba(255,150,0,0.35)' : 'rgba(255,255,255,0.05)',
+            background: delArmed ? `rgba(${palRgb('#ff7700')},0.35)` : 'rgba(255,255,255,0.05)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', userSelect: 'none',
-            border: `1px solid ${delArmed ? 'rgba(255,150,0,0.5)' : '#252525'}`,
+            border: `1px solid ${delArmed ? `rgba(${palRgb('#ff7700')},0.5)` : '#252525'}`,
             transition: 'all 0.1s',
           }}
         >
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: 1,
-            color: delArmed ? '#ffaa00' : '#555',
+            color: delArmed ? pal('#ff7700') : '#555',
           }}>DEL</span>
         </div>
       </div>

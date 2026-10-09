@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { RouterRow, RouterWidget, Widget } from '../../../shared/types/project';
+import type { RouterRow, Widget } from '../../../shared/types/project';
 import type { Mapping } from '../../../shared/types/mapping';
 import { useStore } from '../../store';
 import { cellCount } from '../../widgets/utils';
@@ -7,6 +7,11 @@ import { remapRange, isIdentityRange } from '../../widgets/base/range';
 import { dispatchValue } from '../../ipc/dispatch';
 import { pressCell, releaseCell } from '../../widgets/ButtonGrid/behavior';
 import { bridge } from '../../ipc/bridge';
+import { transportCommandOf, sendTimelineCommand } from '../../widgets/Timeline/transport';
+import { onDmxInput } from '../../ipc/dmxInput';
+import { cellMapping } from '../../widgets/base/cellMapping';
+import { paramInputOf, setParamInput } from '../../widgets/base/paramInputs';
+import { allRouterRows as allProjectRouterRows } from '../../widgets/base/routers';
 
 // Headless engine that runs ALL router rows across ALL pages, regardless of
 // which page is currently shown. This is what makes cross-page links work:
@@ -19,38 +24,7 @@ import { bridge } from '../../ipc/bridge';
 // freezes at the last emitted value and the engine keeps forwarding that.
 
 function getWidgetCellMapping(widgetId: string, cellIndex: number): Mapping {
-  const state = useStore.getState();
-  for (const page of state.project.pages) {
-    const w = page.widgets.find((x) => x.id === widgetId);
-    if (!w) continue;
-    if (w.kind === 'xyPad') return cellIndex === 0 ? w.mappingX : w.mappingY;
-    if (w.kind === 'autoBpm') {
-      return cellIndex < 8
-        ? (w.beatOutputs[cellIndex]?.triggerMapping ?? null)
-        : (w.beatOutputs[cellIndex - 8]?.rampMapping ?? null);
-    }
-    if (w.kind === 'timeline') {
-      const track = w.tracks[cellIndex];
-      if (!track) return null;
-      if (track.kind === 'value' || track.kind === 'trig') return (track as { mapping: Mapping }).mapping;
-      return null;
-    }
-    if (w.kind === 'audioAnalyser') {
-      const audioKeys = ['kickMapping', 'snareMapping', 'bassMapping', 'midMapping', 'highMapping'] as const;
-      if (cellIndex < 5) return (w[audioKeys[cellIndex]] ?? null) as Mapping;
-      if (cellIndex < 13) return (w.beatOutputs?.[cellIndex - 5]?.triggerMapping ?? null);
-      return (w.beatOutputs?.[cellIndex - 13]?.rampMapping ?? null);
-    }
-    if (w.kind === 'soundPlayer') {
-      return (w.tracks[cellIndex]?.playMapping ?? null) as Mapping;
-    }
-    if ('cells' in w && Array.isArray(w.cells)) {
-      return ((w.cells as { mapping?: Mapping }[])[cellIndex]?.mapping ?? null);
-    }
-    if ('mapping' in w) return (w as { mapping: Mapping }).mapping;
-    return null;
-  }
-  return null;
+  return cellMapping(useStore.getState().project, widgetId, cellIndex);
 }
 
 function isButtonTarget(widgetId: string): boolean {
@@ -73,8 +47,49 @@ function findWidget(widgetId: string): Widget | undefined {
 // stream of the same value. Module-level: the engine is mounted once.
 const lastButtonInput = new Map<string, number>();
 
-function driveCell(widgetId: string, cellIdx: number, v: number, isButton: boolean): void {
-  if (isButton) { driveButtonCell(widgetId, cellIdx, v); return; }
+// Timeline transport inputs fire on the rising edge only (≥ 0.5), so a pad's
+// note-off, a fader resting at full or a DMX channel held open fire once.
+const lastTransportInput = new Map<string, number>();
+
+function driveTimelineTransport(widgetId: string, cellIdx: number, v: number, initial: boolean): void {
+  const cmd = transportCommandOf(cellIdx);
+  if (!cmd) return;
+  const key = `${widgetId}:${cellIdx}`;
+  const prev = lastTransportInput.get(key) ?? 0;
+  lastTransportInput.set(key, v);
+  // `initial`: the first value ever seen on a streamed input (Art-Net). A
+  // console that is already sitting at full when LiveForge starts listening
+  // must not fire GO by itself — only a real move does.
+  if (initial) return;
+  if (prev < 0.5 && v >= 0.5) sendTimelineCommand(widgetId, cmd);
+}
+
+// Widgets whose cells are triggers, not levels: they act on a rising edge, so
+// the first value of a stream (a console already at full when we start
+// listening) must not reach them — only a real move may fire.
+const TRIGGER_KINDS = new Set<Widget['kind']>(['dmxRecorder', 'dmxPlayer', 'cues', 'soundPlayer', 'keyboard']);
+const lastTriggerInput = new Map<string, number>();
+
+function driveCell(widgetId: string, cellIdx: number, v: number, isButton: boolean, initial = false): void {
+  if (cellIdx < 0) {
+    const tw = findWidget(widgetId);
+    if (tw?.kind === 'timeline') { driveTimelineTransport(widgetId, cellIdx, v, initial); return; }
+    // Continuous parameter inputs (LFO SPEED / RATE / PHASE): just the value.
+    const pi = tw ? paramInputOf(tw, cellIdx) : undefined;
+    if (pi) setParamInput(widgetId, pi.key, v);
+    return;
+  }
+  if (isButton) { driveButtonCell(widgetId, cellIdx, v, initial); return; }
+  const w = findWidget(widgetId);
+  if (w && TRIGGER_KINDS.has(w.kind)) {
+    const key = `${widgetId}:${cellIdx}`;
+    const prev = lastTriggerInput.get(key);
+    lastTriggerInput.set(key, v);
+    if (initial) return;
+    // Still held high since that first frame, just wiggling: no edge yet.
+    const cur = useStore.getState().runtime.widgets[widgetId]?.cells[cellIdx]?.value ?? 0;
+    if (prev !== undefined && prev >= 0.5 && v >= 0.5 && cur < 0.5) return;
+  }
   useStore.getState().setCellValue(widgetId, cellIdx, v);
   const cellMapping = getWidgetCellMapping(widgetId, cellIdx);
   if (cellMapping) dispatchValue(cellMapping, v);
@@ -86,12 +101,13 @@ function driveCell(widgetId: string, cellIdx: number, v: number, isButton: boole
 // behaviour decides the state — a toggle stays lit after the pad is released.
 // pressCell also sends the cell's mapping, so a controller patched to the MIDI
 // output gets the resulting state back and lights its LED.
-function driveButtonCell(widgetId: string, cellIdx: number, v: number): void {
+function driveButtonCell(widgetId: string, cellIdx: number, v: number, initial = false): void {
   const w = findWidget(widgetId);
   if (!w || w.kind !== 'buttonGrid') return;
   const key = `${widgetId}:${cellIdx}`;
   const prev = lastButtonInput.get(key) ?? 0;
   lastButtonInput.set(key, v);
+  if (initial) return;   // see driveTimelineTransport
   if (prev < 0.5 && v >= 0.5) pressCell(w, cellIdx);
   else if (prev >= 0.5 && v < 0.5) releaseCell(w, cellIdx);
 }
@@ -99,7 +115,7 @@ function driveButtonCell(widgetId: string, cellIdx: number, v: number): void {
 // srcIndex is set when the row listens to a whole widget: the value then belongs
 // to one specific source cell, and an ALL output mirrors it onto the SAME index
 // (bank → bank, 1:1). Without it an ALL output fans one value out to every cell.
-function routeValue(row: RouterRow, vIn: number, srcIndex?: number): void {
+function routeValue(row: RouterRow, vIn: number, srcIndex?: number, initial = false): void {
   // Publish what the row received so the router widget can show it. Widget-input
   // rows read their source cell directly and do not need this; MIDI and OSC rows
   // have no cell to read, which is why they used to display a permanent 0.
@@ -107,6 +123,7 @@ function routeValue(row: RouterRow, vIn: number, srcIndex?: number): void {
     useStore.getState().setRouterInput(row.id, vIn);
   }
   for (const out of row.outputs) {
+    if (out.muted) continue;   // switched off on the Router page
     // Each output gets its own travel through the source's range.
     const v = isIdentityRange(out) ? vIn : remapRange(vIn, out);
     if (out.targetWidgetId) {
@@ -115,15 +132,15 @@ function routeValue(row: RouterRow, vIn: number, srcIndex?: number): void {
         const w = findWidget(out.targetWidgetId);
         const n = w ? cellCount(w) : 0;
         if (srcIndex !== undefined) {
-          if (srcIndex < n) driveCell(out.targetWidgetId, srcIndex, v, isButton);
+          if (srcIndex < n) driveCell(out.targetWidgetId, srcIndex, v, isButton, initial);
         } else {
-          for (let i = 0; i < n; i++) driveCell(out.targetWidgetId, i, v, isButton);
+          for (let i = 0; i < n; i++) driveCell(out.targetWidgetId, i, v, isButton, initial);
         }
       } else {
         // A single-cell output cannot follow an index, so it tracks the first
         // source cell only.
         if (srcIndex === undefined || srcIndex === 0) {
-          driveCell(out.targetWidgetId, out.targetCellIndex ?? 0, v, isButton);
+          driveCell(out.targetWidgetId, out.targetCellIndex ?? 0, v, isButton, initial);
         }
       }
     } else if (out.mapping) {
@@ -132,15 +149,9 @@ function routeValue(row: RouterRow, vIn: number, srcIndex?: number): void {
   }
 }
 
-// All router rows currently in the project (across every page).
+// All router rows in the project: the main router plus every Router widget.
 function allRouterRows(): RouterRow[] {
-  const rows: RouterRow[] = [];
-  for (const page of useStore.getState().project.pages) {
-    for (const w of page.widgets) {
-      if (w.kind === 'router') rows.push(...(w as RouterWidget).rows);
-    }
-  }
-  return rows;
+  return allProjectRouterRows(useStore.getState().project);
 }
 
 export default function RouterEngine(): null {
@@ -242,6 +253,25 @@ export default function RouterEngine(): null {
     });
     return unsubscribe;
   }, []);
+
+  // Art-Net and sACN input sources (same row fields: universe + channel). One batch of changed channels at a time; a row
+  // listening on a channel that did not change is not touched.
+  useEffect(() => onDmxInput((changes) => {
+    const rows = allRouterRows().filter((r) => (r.inputType === 'artnet' || r.inputType === 'sacn') && r.outputs.length > 0);
+    if (rows.length === 0) return;
+    for (const c of changes) {
+      for (const row of rows) {
+        if (row.inputType !== c.protocol) continue;
+        if ((row.artnetUniverse ?? 0) !== c.universe || (row.artnetChannel ?? 1) !== c.channel) continue;
+        const v = c.value / 255;
+        if (prevValues.current[row.id] === v && !c.initial) continue;
+        prevValues.current[row.id] = v;
+        // `initial`: the console's state when we started listening. Faders take
+        // it; triggers (GO, buttons) only record it, so nothing fires by itself.
+        routeValue(row, v, undefined, c.initial);
+      }
+    }
+  }), []);
 
   return null;
 }

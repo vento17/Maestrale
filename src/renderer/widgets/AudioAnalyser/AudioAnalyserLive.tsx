@@ -1,3 +1,4 @@
+import { pal, palRgb } from '../../palette';
 import React, { useEffect, useRef, useState } from 'react';
 import type { AudioAnalyserWidget } from '../../../shared/types/project';
 import { BEAT_DIVISORS } from '../../../shared/types/project';
@@ -317,7 +318,7 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
       ctx.lineTo(px, H - amp * H * 0.85);
     }
     ctx.lineTo(W, H); ctx.closePath();
-    ctx.fillStyle = 'rgba(68,136,255,0.22)';
+    ctx.fillStyle = `rgba(${palRgb('#7ac4c9')},0.22)`;
     ctx.fill();
 
     // Mid (bandpass, green)
@@ -327,7 +328,7 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
       ctx.lineTo(px, H - amp * H * 0.85);
     }
     ctx.lineTo(W, H); ctx.closePath();
-    ctx.fillStyle = 'rgba(68,204,136,0.22)';
+    ctx.fillStyle = `rgba(${palRgb('#56b3ba')},0.22)`;
     ctx.fill();
 
     // High (highpass, cyan)
@@ -337,7 +338,7 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
       ctx.lineTo(px, H - amp * H * 0.85);
     }
     ctx.lineTo(0, H); ctx.closePath();
-    ctx.fillStyle = 'rgba(136,221,255,0.22)';
+    ctx.fillStyle = `rgba(${palRgb('#abd9dc')},0.22)`;
     ctx.fill();
 
     // Cutoff/center lines and labels
@@ -346,9 +347,9 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
     const highX = freqToX(w.highFreq,  W);
 
     ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
-    ctx.strokeStyle = '#4488ff'; ctx.beginPath(); ctx.moveTo(bassX, 0); ctx.lineTo(bassX, H); ctx.stroke();
-    ctx.strokeStyle = '#44cc88'; ctx.beginPath(); ctx.moveTo(midX,  0); ctx.lineTo(midX,  H); ctx.stroke();
-    ctx.strokeStyle = '#88ddff'; ctx.beginPath(); ctx.moveTo(highX, 0); ctx.lineTo(highX, H); ctx.stroke();
+    ctx.strokeStyle = pal('#7ac4c9'); ctx.beginPath(); ctx.moveTo(bassX, 0); ctx.lineTo(bassX, H); ctx.stroke();
+    ctx.strokeStyle = pal('#56b3ba'); ctx.beginPath(); ctx.moveTo(midX,  0); ctx.lineTo(midX,  H); ctx.stroke();
+    ctx.strokeStyle = pal('#abd9dc'); ctx.beginPath(); ctx.moveTo(highX, 0); ctx.lineTo(highX, H); ctx.stroke();
     ctx.setLineDash([]);
 
     // Drag handles (small triangles at top)
@@ -358,16 +359,16 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
       ctx!.moveTo(x, 7); ctx!.lineTo(x - 5, 0); ctx!.lineTo(x + 5, 0);
       ctx!.fill();
     }
-    handle(bassX, '#4488ff'); handle(midX, '#44cc88'); handle(highX, '#88ddff');
+    handle(bassX, pal('#7ac4c9')); handle(midX, pal('#56b3ba')); handle(highX, pal('#abd9dc'));
 
     // Labels
     ctx.font = '9px monospace';
-    ctx.fillStyle = '#4488ff';
+    ctx.fillStyle = pal('#7ac4c9');
     ctx.fillText(`B ${w.bassFreq >= 1000 ? (w.bassFreq/1000).toFixed(1)+'k' : w.bassFreq+''}Hz`, Math.min(bassX + 3, W - 58), 18);
-    ctx.fillStyle = '#44cc88';
+    ctx.fillStyle = pal('#56b3ba');
     const midLabelX = Math.min(Math.max(midX - 20, 2), W - 60);
     ctx.fillText(`M ${w.midFreq >= 1000 ? (w.midFreq/1000).toFixed(1)+'k' : w.midFreq+''}Hz`, midLabelX, 30);
-    ctx.fillStyle = '#88ddff';
+    ctx.fillStyle = pal('#abd9dc');
     ctx.fillText(`H ${w.highFreq >= 1000 ? (w.highFreq/1000).toFixed(1)+'k' : w.highFreq+''}Hz`, Math.max(highX - 58, 2), 18);
 
     // Freq axis
@@ -485,13 +486,13 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
         {/* Kick row + threshold slider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-            background: display.kickFlash ? '#ff4444' : '#1e1e1e', transition: 'none' }} />
-          <span style={{ fontSize: fs, color: '#ff4444', width: fs, flexShrink: 0, fontWeight: 700 }}>K</span>
+            background: display.kickFlash ? pal('#ff9b44') : '#1e1e1e', transition: 'none' }} />
+          <span style={{ fontSize: fs, color: pal('#ff9b44'), width: fs, flexShrink: 0, fontWeight: 700 }}>K</span>
           <div style={{ flex: 1, height: 11, background: '#1a1a1a', borderRadius: 3, overflow: 'visible', position: 'relative' }}>
             <div style={{ width: `${Math.min(1, display.kick) * 100}%`, height: '100%',
-              background: display.kick > widget.kickThreshold ? '#ff4444' : '#333', borderRadius: 2, transition: 'none' }} />
+              background: display.kick > widget.kickThreshold ? pal('#ff9b44') : '#333', borderRadius: 2, transition: 'none' }} />
             <div style={{ position: 'absolute', top: -2, left: `${widget.kickThreshold * 100}%`, width: 2, height: 15,
-              background: '#ff4444', opacity: 0.85 }} />
+              background: pal('#ff9b44'), opacity: 0.85 }} />
           </div>
           <span style={readout}>{display.kick.toFixed(2)}</span>
         </div>
@@ -499,18 +500,18 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
           title="K threshold"
           value={widget.kickThreshold}
           onChange={(e) => updateThreshold('kickThreshold', Number(e.target.value))}
-          style={{ color: '#ff4444', flexShrink: 0 }} />
+          style={{ color: pal('#ff9b44'), flexShrink: 0 }} />
 
         {/* Snare row + threshold slider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-            background: display.snareFlash ? '#ffaa00' : '#1e1e1e', transition: 'none' }} />
-          <span style={{ fontSize: fs, color: '#ffaa00', width: fs, flexShrink: 0, fontWeight: 700 }}>S</span>
+            background: display.snareFlash ? pal('#ff7700') : '#1e1e1e', transition: 'none' }} />
+          <span style={{ fontSize: fs, color: pal('#ff7700'), width: fs, flexShrink: 0, fontWeight: 700 }}>S</span>
           <div style={{ flex: 1, height: 11, background: '#1a1a1a', borderRadius: 3, overflow: 'visible', position: 'relative' }}>
             <div style={{ width: `${Math.min(1, display.snare) * 100}%`, height: '100%',
-              background: display.snare > widget.snareThreshold ? '#ffaa00' : '#333', borderRadius: 2, transition: 'none' }} />
+              background: display.snare > widget.snareThreshold ? pal('#ff7700') : '#333', borderRadius: 2, transition: 'none' }} />
             <div style={{ position: 'absolute', top: -2, left: `${widget.snareThreshold * 100}%`, width: 2, height: 15,
-              background: '#ffaa00', opacity: 0.85 }} />
+              background: pal('#ff7700'), opacity: 0.85 }} />
           </div>
           <span style={readout}>{display.snare.toFixed(2)}</span>
         </div>
@@ -518,14 +519,14 @@ export default function AudioAnalyserLive({ widget }: { widget: AudioAnalyserWid
           title="S threshold"
           value={widget.snareThreshold}
           onChange={(e) => updateThreshold('snareThreshold', Number(e.target.value))}
-          style={{ color: '#ffaa00', flexShrink: 0 }} />
+          style={{ color: pal('#ff7700'), flexShrink: 0 }} />
 
         {/* Levels */}
         <div style={{ ...hdr, marginTop: 2 }}>LEVELS</div>
         {([
-          { label: 'B', color: '#4488ff', val: display.bass },
-          { label: 'M', color: '#44cc88', val: display.mid  },
-          { label: 'H', color: '#88ddff', val: display.high },
+          { label: 'B', color: pal('#7ac4c9'), val: display.bass },
+          { label: 'M', color: pal('#56b3ba'), val: display.mid  },
+          { label: 'H', color: pal('#abd9dc'), val: display.high },
         ]).map(({ label, color, val }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: fs, color, width: fs, flexShrink: 0, fontWeight: 700 }}>{label}</span>

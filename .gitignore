@@ -33,3 +33,6 @@ __pycache__/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Art-Net probe output (scripts/artnet-probe.bat)
+artnet-probe.txt

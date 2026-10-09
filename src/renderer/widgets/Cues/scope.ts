@@ -5,10 +5,15 @@ import type { Project, Widget } from '../../../shared/types/project';
 // scoping it down is the exception, not the setup step.
 export const CUE_SCOPE_ALL = 'all';
 
-// Widgets that hold no state worth storing in a cue.
+// Widgets a cue stores: controls (values) and generators / timelines (their
+// play state). Not triggers (recorder, players, keyboard), meters, displays or
+// routing — recalling those would fire things or mean nothing.
+const CUE_KINDS = new Set<Widget['kind']>([
+  'sliderBank', 'knobBank', 'buttonGrid', 'xyPad', 'masterLevel', 'submasters',
+  'lfoWidget', 'noiseWidget', 'stepSequencer', 'graphWidget', 'sketch', 'timeline',
+]);
 function isSnapshottable(w: Widget): boolean {
-  return w.kind !== 'textWidget' && w.kind !== 'imageWidget'
-      && w.kind !== 'cues' && w.kind !== 'manual';
+  return CUE_KINDS.has(w.kind) || (w.kind === 'audioLevel' && w.mode === 'out');
 }
 
 export function cueScopePages(project: Project): { id: string; label: string }[] {

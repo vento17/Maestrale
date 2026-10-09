@@ -1,3 +1,4 @@
+import type { WidgetKind } from '../../shared/types/project';
 import type { StateCreator } from 'zustand';
 import type { StoreState } from './index';
 import type { AutoBpmConfig } from '../audio/AutoBpmService';
@@ -20,14 +21,14 @@ export interface MidiLearnTarget {
   widgetId: string;
   cellIndex: number;
   mappingKey?: string;  // 'mapping' | 'triggerMapping' | 'rampMapping' etc.
-  protocol?: 'midi' | 'osc';  // defaults to 'midi' when absent
+  protocol?: 'midi' | 'osc' | 'artnet' | 'sacn';  // defaults to 'midi' when absent
   routerId?: string;    // router the learned row goes into; picked before learning
 }
 
 // Learn mode: instead of right-clicking a single cell, arm the whole UI. Tap a
 // cell to select it, move the physical control to bind it, repeat. Stays on
 // until you switch it off, so a whole desk can be patched in one pass.
-export type LearnMode = 'midi' | 'osc' | null;
+export type LearnMode = 'midi' | 'osc' | 'artnet' | null;
 
 export type LogLevel = 'info' | 'warn' | 'error';
 export interface LogEntry {
@@ -66,6 +67,9 @@ export interface AppSlice {
 
   // Live sidebar
   liveSidebarOpen: boolean;
+  routerPageOpen: boolean;
+  // Widget picked in the menu, waiting for a click on the canvas to be placed.
+  placingKind: WidgetKind | null;
   liveSelectedWidgetId: string | null;
 
   // Auto BPM
@@ -113,6 +117,8 @@ export interface AppSlice {
   setMidiLearnTarget: (target: MidiLearnTarget | null) => void;
   setLearnMode: (mode: LearnMode, routerId?: string | null) => void;
   setLiveSidebarOpen: (open: boolean) => void;
+  setRouterPageOpen: (open: boolean) => void;
+  setPlacingKind: (kind: WidgetKind | null) => void;
   setLiveSelectedWidgetId: (id: string | null) => void;
 
   setBpmMode: (mode: BpmMode) => void;
@@ -146,6 +152,8 @@ export const createAppSlice: StateCreator<StoreState, [['zustand/immer', never]]
   learnMode: null,
   learnRouterId: null,
   liveSidebarOpen: false,
+  routerPageOpen: false,
+  placingKind: null,
   liveSelectedWidgetId: null,
 
   bpmMode: 'tap',
@@ -232,5 +240,7 @@ export const createAppSlice: StateCreator<StoreState, [['zustand/immer', never]]
     if (s.midiLearnTarget) s.midiLearnTarget = { ...s.midiLearnTarget, protocol: mode };
   }),
   setLiveSidebarOpen: (open) => set((s) => { s.liveSidebarOpen = open; }),
+  setRouterPageOpen: (open) => set((s) => { s.routerPageOpen = open; }),
+  setPlacingKind: (kind) => set((s) => { s.placingKind = kind; }),
   setLiveSelectedWidgetId: (id) => set((s) => { s.liveSelectedWidgetId = id; }),
 });

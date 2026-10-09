@@ -28,6 +28,7 @@ function LiveWidget({ widget, onSelect }: { widget: Widget; onSelect?: (id: stri
         boxShadow: frame === 'outline' ? `inset 0 0 0 ${frameSize}px ${frameColor}` : undefined,
         pointerEvents: isPassthrough ? 'none' : undefined,
       }}
+      data-lf-patch={widget.id}
       onPointerDown={() => onSelect?.(widget.id)}
       onMouseMove={() => useStore.getState().setHoverInfo(`${widget.label} · ${widget.kind}`)}
       onMouseLeave={() => useStore.getState().setHoverInfo(null)}

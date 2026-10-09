@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron';
 import { EnttecOpenDmxService } from '../services/EnttecOpenDmxService';
 
-const svc = new EnttecOpenDmxService();
+export const enttecOut = new EnttecOpenDmxService();
+const svc = enttecOut;
 
 export function registerEnttecHandlers(): void {
   ipcMain.handle('tr:enttec:listDevices', (_e) => {

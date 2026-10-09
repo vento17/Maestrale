@@ -1,3 +1,4 @@
+import { pal } from '../palette';
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { bridge } from '../ipc/bridge';
@@ -34,10 +35,20 @@ export default function Recovery(): React.JSX.Element | null {
   useEffect(() => {
     if (checked.current) return;
     checked.current = true;
-    bridge.invoke('tr:project:recoverRead', undefined as never)
-      .then((found) => { if (found) setOffer(found); })
+    // Start where we left off, without asking: the last saved / opened project
+    // (or, if nothing was ever saved, the autosave). An installation PC with
+    // LiveForge in its startup apps boots straight into its show.
+    bridge.invoke('tr:project:openLast', undefined as never)
+      .then((found) => {
+        if (!found) return;
+        const st = useStore.getState();
+        st.loadProject(found.project);
+        if (found.project.startInLive) st.setMode('live');
+        st.addLog('info', found.from === 'saved' ? `Opened ${found.path}` : 'Opened the last autosave');
+      })
       .catch(() => {})
       .finally(() => setReady(true));
+    void setOffer;
   }, []);
 
   // ── Autosave ───────────────────────────────────────────────────────────────
@@ -121,7 +132,7 @@ export default function Recovery(): React.JSX.Element | null {
           <button
             onClick={() => { useStore.getState().loadProject(offer.project); setOffer(null); }}
             style={{
-              background: 'var(--color-accent, #646cff)', border: '1px solid var(--color-accent, #646cff)',
+              background: `var(--color-accent, ${pal('#91ced2')})`, border: `1px solid var(--color-accent, ${pal('#91ced2')})`,
               color: '#000', fontWeight: 700,
               borderRadius: 5, padding: '10px 18px', fontSize: 14, cursor: 'pointer',
               fontFamily: 'inherit',

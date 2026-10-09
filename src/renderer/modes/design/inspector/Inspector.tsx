@@ -1,17 +1,29 @@
+import { pal, palRgb, getPalette, setPalette, resetPalette, DEFAULT_PALETTE } from '../../../palette';
+import type { Palette } from '../../../palette';
+import { xyMapping } from '../../../../shared/types/project';
 import React, { useState, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore, useActivePage, useProject } from '../../../store';
 import type { StoreState } from '../../../store';
-import type { MidiConnection, MidiInputConnection, OscConnection, ArtNetConnection, SacnConnection, LtcAudioConnection, AudioOutputConnection, EnttecDmxConnection, ImageWidget, TextWidget, BlendMode, TextFrame, TextAlign, FontWeight, FontStyle, StepSequencerWidget, GraphWidget, XYPadWidget, SliderBankWidget, SpeedMultiplier, WidgetStyle, ButtonGridWidget, ButtonBehavior, KnobBankWidget, CuesWidget, TimelineWidget, RouterWidget, RouterRow, RouterOutput, RouterInputType, AutoBpmWidget, BeatOutput, LfoWidget, MathWidget, MathOperation, LfoWaveform, ValueDisplayWidget, ValueDisplayFormat } from '../../../../shared/types/project';
+import type { MidiConnection, MidiInputConnection, OscConnection, ArtNetConnection, ArtNetInputConnection, SacnInputConnection, SacnConnection, LtcAudioConnection, AudioOutputConnection, EnttecDmxConnection, ImageWidget, TextWidget, BlendMode, TextFrame, TextAlign, FontWeight, FontStyle, StepSequencerWidget, GraphWidget, XYPadWidget, SliderBankWidget, SpeedMultiplier, WidgetStyle, ButtonGridWidget, ButtonBehavior, KnobBankWidget, CuesWidget, TimelineWidget, RouterWidget, RouterRow, RouterOutput, RouterInputType, AutoBpmWidget, BeatOutput, LfoWidget, MathWidget, MathOperation, LfoWaveform, ValueDisplayWidget, ValueDisplayFormat } from '../../../../shared/types/project';
 import { BEAT_DIVISORS } from '../../../../shared/types/project';
 import type { Mapping, MidiMapping, OscMapping, EnttecDmxMapping, ArtNetMapping, SacnMapping } from '../../../../shared/types/mapping';
 import { bridge } from '../../../ipc/bridge';
+import { onDmxInputStatus } from '../../../ipc/dmxInput';
+import { useTakes, refreshTakes, fmtTime, fmtBytes, parseUniverses } from '../../../ipc/dmxTakes';
+import { ClockAlarms } from '../../../widgets/Clock/ClockLive';
+import { inOptions as monInOptions, outOptions as monOutOptions } from '../../../widgets/DmxMonitor/DmxMonitorLive';
+import { addLane, removeLane } from '../../../widgets/LfoWidget/LfoWidgetLive';
+import { addXYDot, XY_DOT_COLORS } from '../../../widgets/XYPad/XYPadLive';
+import type { DmxInputStatusPayload } from '../../../../shared/types/ipc';
 import { dispatchValue, dispatchButton } from '../../../ipc/dispatch';
 import {
   SETTINGS_ENTRIES as MANUAL_SETTINGS_ENTRIES,
   WIDGET_ENTRIES as MANUAL_WIDGET_ENTRIES,
 } from '../../../widgets/Manual/manualContent';
 import { keyCapLabel, RESERVED_CODES } from '../../../widgets/Keyboard/keyNames';
-import { cellLabel, sourceCells, listLinkableSources } from '../../../widgets/base/links';
+import { cellLabel, sourceCells, targetCells, listLinkableSources, computeSlavedCellSet, isLinkSource, SUBMASTER_KINDS, SUBMASTER_ALL, INSTANCE_KINDS } from '../../../widgets/base/links';
+import { pulseParamInput, GEN_SPEEDS } from '../../../widgets/base/paramInputs';
 import NumberInput from '../../../widgets/base/NumberInput';
 import { cueScopePages, cueScopeWidgets, widgetsInScope, CUE_SCOPE_ALL } from '../../../widgets/Cues/scope';
 import { nextFreeCc } from '../../../widgets/defaults';
@@ -21,13 +33,13 @@ import logoUrl from '../../../assets/Logo.png';
 import { GLOBAL_BAR_HEIGHT } from '../../GlobalBar';
 
 export default function Inspector(): React.JSX.Element {
-  const { selectedWidgetId, updateWidget, updateWidgetRect, activePageId, isSettingsOpen } = useStore((s) => ({
+  const { selectedWidgetId, updateWidget, updateWidgetRect, activePageId, isSettingsOpen } = useStore(useShallow((s) => ({
     selectedWidgetId: s.selectedWidgetId,
     updateWidget: s.updateWidget,
     updateWidgetRect: s.updateWidgetRect,
     activePageId: s.activePageId,
     isSettingsOpen: s.isSettingsOpen,
-  }));
+  })));
   const page = useActivePage();
   const widget = page?.widgets.find((w) => w.id === selectedWidgetId);
 
@@ -64,7 +76,7 @@ export default function Inspector(): React.JSX.Element {
                                     ? <SoundPlayerInspectorPanel widget={widget as import('../../../../shared/types/project').SoundPlayerWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                     : widget.kind === 'router'
                                       ? <RouterInspectorPanel widget={widget as import('../../../../shared/types/project').RouterWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
-                                      : widget.kind === 'lfoWidget'
+                                      : widget.kind === 'lfoWidget' || widget.kind === 'noiseWidget'
                                         ? <LfoInspectorPanel widget={widget as LfoWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                         : widget.kind === 'mathWidget'
                                           ? <MathInspectorPanel widget={widget as MathWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
@@ -72,10 +84,22 @@ export default function Inspector(): React.JSX.Element {
                                             ? <ValueDisplayInspectorPanel widget={widget as ValueDisplayWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                             : widget.kind === 'masterLevel'
                                               ? <MasterLevelInspectorPanel widget={widget as import('../../../../shared/types/project').MasterLevelWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                              : widget.kind === 'sketch'
+                                              ? <SketchInspectorPanel widget={widget as import('../../../../shared/types/project').SketchWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                              : widget.kind === 'audioLevel'
+                                              ? <AudioLevelInspectorPanel widget={widget as import('../../../../shared/types/project').AudioLevelWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'instance'
                                                 ? <InstanceInspectorPanel widget={widget as import('../../../../shared/types/project').InstanceWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                 : widget.kind === 'keyboard'
                                                   ? <KeyboardInspectorPanel widget={widget as import('../../../../shared/types/project').KeyboardWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'dmxRecorder'
+                                                  ? <DmxRecorderInspectorPanel widget={widget as import('../../../../shared/types/project').DmxRecorderWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'dmxPlayer'
+                                                  ? <DmxPlayerInspectorPanel widget={widget as import('../../../../shared/types/project').DmxPlayerWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'dmxMonitor'
+                                                  ? <DmxMonitorInspectorPanel widget={widget as import('../../../../shared/types/project').DmxMonitorWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'clock'
+                                                  ? <ClockInspectorPanel widget={widget as import('../../../../shared/types/project').ClockWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                 : widget.kind === 'manual'
                                                   ? <ManualInspectorPanel widget={widget as import('../../../../shared/types/project').ManualWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                   : <WidgetPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
@@ -93,13 +117,13 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
   updateWidget: StoreState['updateWidget'];
   updateWidgetRect: StoreState['updateWidgetRect'];
 }) {
-  const { updateWidgetCounts, resetCellMappings, resetCellNames, resetCellColors, setOutputProtocol } = useStore((s) => ({
+  const { updateWidgetCounts, resetCellMappings, resetCellNames, resetCellColors, setOutputProtocol } = useStore(useShallow((s) => ({
     updateWidgetCounts: s.updateWidgetCounts,
     resetCellMappings: s.resetCellMappings,
     resetCellNames: s.resetCellNames,
     resetCellColors: s.resetCellColors,
     setOutputProtocol: s.setOutputProtocol,
-  }));
+  })));
 
   const project = useProject();
   const [apcConflicts, setApcConflicts] = useState<string[]>([]);
@@ -369,20 +393,20 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
 
           <Section label="APC Mini">
             <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6 }}>
-              Configura 8×8 grid, Note On ch 1, layout APC Mini.<br />
-              Rinomina la porta loopMidi a <strong style={{ color: 'var(--color-text)' }}>"APC MINI"</strong>.
+              Sets an 8×8 grid, Note On ch 1, APC Mini layout.<br />
+              Rename the loopMIDI port to <strong style={{ color: 'var(--color-text)' }}>"APC MINI"</strong>.
             </div>
             <ResetBtn onClick={applyApcMiniPreset}>
               ⬛ Apply APC Mini layout
             </ResetBtn>
             {apcConflicts.length > 0 && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#e6a000', lineHeight: 1.5 }}>
-                ⚠ Altri widget usano ch 1 note 0–63:
+              <div style={{ marginTop: 8, fontSize: 12, color: pal('#e66b00'), lineHeight: 1.5 }}>
+                ⚠ Other widgets use ch 1 notes 0–63:
                 {apcConflicts.map((c, idx) => (
                   <div key={idx} style={{ paddingLeft: 8 }}>· {c}</div>
                 ))}
                 <div style={{ marginTop: 4, color: 'var(--color-text-dim)' }}>
-                  I bottoni APC hanno precedenza sulle note in conflitto.
+                  The APC buttons take priority on the conflicting notes.
                 </div>
               </div>
             )}
@@ -420,8 +444,7 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
                 dispatchButton(cell?.mapping ?? widget.mapping, wr?.cells[i]?.active ?? false, cell?.onValue ?? 127, cell?.offValue ?? 0);
               }
             } else if (widget.kind === 'xyPad') {
-              dispatchValue(widget.mappingX, wr?.cells[0]?.value ?? 0);
-              dispatchValue(widget.mappingY, wr?.cells[1]?.value ?? 0);
+              (wr?.cells ?? []).forEach((c, i) => dispatchValue(xyMapping(widget, i), c.value ?? 0));
             }
           }}>
             ↦ Send all current values
@@ -429,6 +452,40 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
         </Section>
       )}
     </>
+  );
+}
+
+// Settings → Palette: the two interface colours, kept on this computer.
+// The whole interface redraws in them; Reset brings back laguna + fire orange.
+function PaletteSection(): React.JSX.Element {
+  const [p, setP] = useState<Palette>(getPalette());
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const change = (k: keyof Palette, v: string) => {
+    const next = { ...p, [k]: v };
+    setP(next);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setPalette(next), 250);
+  };
+  const isDefault = p.accent === DEFAULT_PALETTE.accent && p.highlight === DEFAULT_PALETTE.highlight;
+  const row = (k: keyof Palette, label: string, hint: string) => (
+    <label title={hint} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 6 }}>
+      <input type="color" value={p[k]} onChange={(e) => change(k, e.target.value)}
+        style={{ width: 34, height: 22, padding: 0, border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer' }} />
+      <span style={{ flex: 1 }}>{label}</span>
+      <span style={{ fontFamily: 'monospace', color: 'var(--color-text-dim)' }}>{p[k]}</span>
+    </label>
+  );
+  return (
+    <Section label="Palette">
+      {row('accent', 'Accent', 'Selections, active states, inputs, Live')}
+      {row('highlight', 'Highlight', 'Warnings, outputs, Learn, the second colour')}
+      <ResetBtn onClick={() => { if (timer.current) clearTimeout(timer.current); resetPalette(); }}>
+        {isDefault ? 'Default palette' : '↺ Reset palette'}
+      </ResetBtn>
+      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
+        Saved on this computer, for every project. Colours you set on a single widget stay as they are.
+      </div>
+    </Section>
   );
 }
 
@@ -925,6 +982,7 @@ function StepSequencerPanel({ widget, activePageId, updateWidget, updateWidgetRe
   return (
     <>
       <div style={styles.header}>Step Sequencer</div>
+      <GenTransportSection widget={widget} speed={widget.speedMultiplier} onSpeed={(v) => patch({ speedMultiplier: v })} />
 
       <Section label="Label">
         <input style={styles.input} value={widget.label}
@@ -1149,6 +1207,7 @@ function GraphPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
   return (
     <>
       <div style={styles.header}>Graph</div>
+      <GenTransportSection widget={widget} speed={widget.speedMultiplier} onSpeed={(v) => patch({ speedMultiplier: v })} />
 
       <Section label="Label">
         <input style={styles.input} value={widget.label}
@@ -1549,6 +1608,35 @@ function XYPadPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
         <MappingEditor mapping={widget.mappingY} onChange={(m) => patch({ mappingY: m })} />
       </Section>
 
+      {(widget.points ?? []).map((pt, k) => {
+        const setPt = (p: Partial<typeof pt>) => patch({ points: (widget.points ?? []).map((x, j) => (j === k ? { ...x, ...p } : x)) });
+        return (
+          <Section key={pt.id} label={`Dot ${k + 2}${pt.label ? ` · ${pt.label}` : ''}`}>
+            <Row>
+              <Field label="Name"><input style={styles.input} value={pt.label ?? ''} placeholder={String(k + 2)} onChange={(e) => setPt({ label: e.target.value })} /></Field>
+              <Field label="Colour"><ColorInput value={pt.color || XY_DOT_COLORS[k % XY_DOT_COLORS.length]} onChange={(v) => setPt({ color: v })} /></Field>
+              <button title="Remove this dot" onClick={() => {
+                const st = useStore.getState();
+                st.dropCellAndShiftLinks(widget.id, 2 * (k + 1) + 1);
+                st.dropCellAndShiftLinks(widget.id, 2 * (k + 1));
+                patch({ points: (widget.points ?? []).filter((_, j) => j !== k) });
+              }} style={{ background: 'none', border: '1px solid #333', color: pal('#de8b43'), cursor: 'pointer', borderRadius: 2, alignSelf: 'flex-end', height: 28 }}>✕</button>
+            </Row>
+            <div style={{ fontSize: 11, color: '#666', margin: '6px 0 2px' }}>X</div>
+            <MappingEditor mapping={pt.mappingX} onChange={(m) => setPt({ mappingX: m })} />
+            <div style={{ fontSize: 11, color: '#666', margin: '6px 0 2px' }}>Y</div>
+            <MappingEditor mapping={pt.mappingY} onChange={(m) => setPt({ mappingY: m })} />
+          </Section>
+        );
+      })}
+      <Section label="Dots">
+        <button onClick={() => addXYDot(widget)} style={{ ...styles.input, cursor: 'pointer' }}>＋ Dot</button>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Several dots on one pad — e.g. pan / tilt of several heads, each driven by an LFO, Noise or Path and all visible
+          together. Each dot has its own X and Y cells and outputs; drag the nearest one, several at once with several fingers.
+        </div>
+      </Section>
+
       <Section label="Style">
         <Row>
           <Field label="BG"><ColorInput value={widget.style.backgroundColor} onChange={(v) => patchStyle({ backgroundColor: v })} /></Field>
@@ -1574,9 +1662,191 @@ function XYPadPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
 
 type ConnStatus = 'idle' | 'ok' | 'error' | 'disconnected';
 
+function isValidBindHost(v: string): boolean {
+  const t = v.trim();
+  if (t === '' || t.toLowerCase() === 'localhost') return true;
+  const m = t.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  return !!m && m.slice(1).every((n) => Number(n) <= 255);
+}
+
+// Art-Net INPUT: on/off, interface, and what is actually arriving — packets,
+// universes and who is sending — so a dead network is obvious before the show.
+function ArtNetInputSettings({ conn, onChange }: {
+  conn: ArtNetInputConnection | undefined;
+  onChange: (c: ArtNetInputConnection) => void;
+}) {
+  const enabled = conn?.enabled ?? false;
+  const [status, setStatus] = useState<DmxInputStatusPayload | null>(null);
+  useEffect(() => onDmxInputStatus((s) => { if (s.protocol === 'artnet') setStatus(s); }), []);
+  const live = enabled && status?.listening;
+  // Applied on Enter / leaving the field, never per keystroke: restarting the
+  // receiver for "1", "12", "127"… is what produced the ENOTFOUND errors.
+  const [ipDraft, setIpDraft] = useState(conn?.bindHost ?? '');
+  useEffect(() => setIpDraft(conn?.bindHost ?? ''), [conn?.bindHost]);
+  const ipOk = isValidBindHost(ipDraft);
+  const [uniDraft, setUniDraft] = useState(conn?.universes ?? '');
+  useEffect(() => setUniDraft(conn?.universes ?? ''), [conn?.universes]);
+  const commitIp = () => {
+    const v = ipDraft.trim();
+    if (!isValidBindHost(v) || v === (conn?.bindHost ?? '')) return;
+    onChange({ type: 'artnetInput', enabled, bindHost: v, universes: conn?.universes });
+  };
+  return (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #222' }}>
+      <div style={{ fontSize: 12, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+        Input
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+        <input type="checkbox" checked={enabled}
+          onChange={(e) => onChange({ type: 'artnetInput', enabled: e.target.checked, bindHost: conn?.bindHost, universes: conn?.universes })} />
+        Receive Art-Net (UDP 6454)
+      </label>
+      <Field label="This PC's network card (optional)">
+        <input style={{ ...styles.input, borderColor: ipOk ? undefined : pal('#bc6921') }}
+          placeholder="empty = every card, 127.0.0.1 included"
+          value={ipDraft}
+          onChange={(e) => setIpDraft(e.target.value)}
+          onBlur={commitIp}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+      </Field>
+      <Field label="Announce universes">
+        <input style={styles.input} placeholder="0" value={uniDraft}
+          onChange={(e) => setUniDraft(e.target.value)}
+          onBlur={() => { if (uniDraft !== (conn?.universes ?? '')) onChange({ type: 'artnetInput', enabled, bindHost: conn?.bindHost, universes: uniDraft }); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+      </Field>
+      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.5 }}>
+        LiveForge answers ArtPoll as a node with these universes ("0-3", "0, 5"), so a sender in unicast mode —
+        MadMapper with "Use Unicast", most consoles — finds it in its node list and sends to it.
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.5 }}>
+        Not the sender's address: which card of THIS computer to listen on. Leave it empty to receive everything —
+        a console on the network and an app on this same PC sending to 127.0.0.1 / localhost (MadMapper, Resolume…).
+        If that app also uses port 6454 itself (MadMapper does), Windows hands it the packets meant for 127.0.0.1:
+        put <b>127.0.0.2</b> here and send to 127.0.0.2 from the app — any 127.x.x.x is this same PC.
+        {!ipOk && <span style={{ color: pal('#e39d60') }}> Not a valid IP — kept the previous one.</span>}
+      </div>
+      <div style={{ fontSize: 12, color: live && status!.packetsPerSec > 0 ? pal('#6ebec4') : 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.6 }}>
+        {!enabled ? 'off'
+          : !status?.listening ? <span style={{ color: pal('#e39d60') }}>not listening{status?.error ? ` — ${status.error}` : ''}</span>
+          : status.packetsPerSec === 0 ? <>listening on {status.bound ?? '6454'} · no DMX arriving</>
+          : <>
+              listening on {status.bound ?? '6454'} · {status.packetsPerSec} pkt/s<br />
+              universes {status.universes.join(', ')}<br />
+              from {status.sources.join(', ')}
+            </>}
+        {live && (status!.polls?.length ?? 0) > 0 && <><br />ArtPoll from {status!.polls!.join(', ')} — answered</>}
+        {live && (status!.otherPerSec ?? 0) > 0 && <><br />{status!.otherPerSec} other Art-Net pkt/s (not DMX)</>}
+        {live && (status!.ownPerSec ?? 0) > 0 && <><br />{status!.ownPerSec} pkt/s of our own output ignored</>}
+      </div>
+    </div>
+  );
+}
+
+// sACN INPUT: multicast is per universe, so the universes to listen to are
+// listed here (joined on every card, loopback included). Unicast to this PC on
+// 5568 arrives too, whatever the list.
+// Where the DMX Recorder writes and where the Player looks. Kept on this
+// computer, not in the project: a project copied or cloned elsewhere just
+// points at that machine's own folders.
+function RecordingFolders() {
+  const [f, setF] = useState<{ record: string; play: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { bridge.invoke('tr:dmxRec:getFolders', undefined).then((r) => r && setF(r)).catch(() => {}); }, []);
+  const save = async (p: { record?: string; play?: string }) => {
+    const r = await bridge.invoke('tr:dmxRec:setFolders', p);
+    if (r) { setF({ record: r.record, play: r.play }); setErr(r.ok ? null : r.error ?? 'cannot use that folder'); }
+    void refreshTakes();
+  };
+  const pick = async (which: 'record' | 'play') => {
+    const dir = await bridge.invoke('tr:dmxRec:pickFolder', { title: which === 'record' ? 'Record takes into…' : 'Play takes from…', current: f?.[which] });
+    if (dir) await save(which === 'record' ? { record: dir } : { play: dir });
+  };
+  const row = (which: 'record' | 'play', label: string) => (
+    <Field label={label}>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <input style={{ ...styles.input, flex: 1, minWidth: 0, fontSize: 11 }} value={f?.[which] ?? ''} readOnly title={f?.[which]} />
+        <button style={{ ...styles.input, width: 'auto', cursor: 'pointer', padding: '0 8px' }} onClick={() => void pick(which)}>Choose…</button>
+        <button style={{ ...styles.input, width: 'auto', cursor: 'pointer', padding: '0 8px' }} title="Open in the file manager"
+          onClick={() => void bridge.invoke('tr:dmxRec:openFolder', { which })}>↗</button>
+      </div>
+    </Field>
+  );
+  return (
+    <>
+      {row('record', 'REC saves takes in')}
+      {row('play', 'Player takes takes from')}
+      {f && f.play !== f.record && (
+        <button style={{ ...styles.input, cursor: 'pointer', marginTop: 4 }} onClick={() => void save({ play: f.record })}>Player: use the REC folder</button>
+      )}
+      {err && <div style={{ fontSize: 12, color: pal('#e39d60'), marginTop: 4 }}>{err}</div>}
+      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+        Remembered on this computer, not in the project. Default: Documents/LiveForge/Recordings. The Player also lists
+        the takes just recorded, so a new take plays at once even if the folders differ. Takes are .lfdmx files — copy them
+        between computers like any file.
+      </div>
+    </>
+  );
+}
+
+function SacnInputSettings({ conn, onChange }: {
+  conn: SacnInputConnection | undefined;
+  onChange: (c: SacnInputConnection) => void;
+}) {
+  const enabled = conn?.enabled ?? false;
+  const [status, setStatus] = useState<DmxInputStatusPayload | null>(null);
+  useEffect(() => onDmxInputStatus((s) => { if (s.protocol === 'sacn') setStatus(s); }), []);
+  const live = enabled && status?.listening;
+  const [ipDraft, setIpDraft] = useState(conn?.bindHost ?? '');
+  useEffect(() => setIpDraft(conn?.bindHost ?? ''), [conn?.bindHost]);
+  const ipOk = isValidBindHost(ipDraft);
+  const [uniDraft, setUniDraft] = useState(conn?.universes ?? '');
+  useEffect(() => setUniDraft(conn?.universes ?? ''), [conn?.universes]);
+  const base = { type: 'sacnInput' as const, enabled, bindHost: conn?.bindHost, universes: conn?.universes };
+  return (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #222' }}>
+      <div style={{ fontSize: 12, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Input</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => onChange({ ...base, enabled: e.target.checked })} />
+        Receive sACN (UDP 5568)
+      </label>
+      <Field label="Universes to listen to">
+        <input style={styles.input} placeholder="1" value={uniDraft}
+          onChange={(e) => setUniDraft(e.target.value)}
+          onBlur={() => { if (uniDraft !== (conn?.universes ?? '')) onChange({ ...base, universes: uniDraft }); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+      </Field>
+      <Field label="This PC's network card (optional)">
+        <input style={{ ...styles.input, borderColor: ipOk ? undefined : pal('#bc6921') }}
+          placeholder="empty = every card, 127.0.0.1 included"
+          value={ipDraft}
+          onChange={(e) => setIpDraft(e.target.value)}
+          onBlur={() => { const v = ipDraft.trim(); if (isValidBindHost(v) && v !== (conn?.bindHost ?? '')) onChange({ ...base, bindHost: v }); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+      </Field>
+      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.5 }}>
+        sACN universes start at 1 ("1-4", "1, 7"). Multicast reaches every program that listens, so it works next to
+        MadMapper, TouchDesigner or Resolume on the same PC with nothing to configure. Highest priority wins when two sources send the same universe.
+      </div>
+      <div style={{ fontSize: 12, color: live && status!.packetsPerSec > 0 ? pal('#6ebec4') : 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.6 }}>
+        {!enabled ? 'off'
+          : !status?.listening ? <span style={{ color: pal('#e39d60') }}>not listening{status?.error ? ` — ${status.error}` : ''}</span>
+          : status.packetsPerSec === 0 ? <>listening on {status.bound ?? '5568'} · no DMX arriving</>
+          : <>
+              listening on {status.bound ?? '5568'} · {status.packetsPerSec} pkt/s<br />
+              universes {status.universes.join(', ')}<br />
+              from {status.sources.join(', ')}{(status.names?.length ?? 0) > 0 ? ` (${status.names!.join(', ')})` : ''}
+            </>}
+        {live && status!.error && <><br /><span style={{ color: pal('#dd6700') }}>{status!.error}</span></>}
+        {live && (status!.ownPerSec ?? 0) > 0 && <><br />{status!.ownPerSec} pkt/s of our own output ignored</>}
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: ConnStatus }) {
   if (status === 'idle') return null;
-  const color = status === 'ok' ? '#4caf50' : '#f44336';
+  const color = status === 'ok' ? pal('#4ca8af') : pal('#f48f36');
   const label = status === 'ok' ? 'connected' : status === 'error' ? 'error' : 'disconnected';
   return (
     <span style={{ fontSize: 12, marginLeft: 8, color }}>● {label}</span>
@@ -1595,7 +1865,7 @@ function ConnectBtn({ onClick, children, disconnect, disabled }: {
       disabled={disabled}
       style={{
         marginTop: 8, width: '100%',
-        background: disabled ? 'var(--color-surface-2)' : disconnect ? '#c0392b' : 'var(--color-accent)',
+        background: disabled ? 'var(--color-surface-2)' : disconnect ? pal('#c87023') : 'var(--color-accent)',
         border: 'none',
         color: disabled ? 'var(--color-text-dim)' : disconnect ? '#fff' : '#000',
         borderRadius: 'var(--radius-sm)',
@@ -1626,7 +1896,7 @@ const RESOLUTION_PRESETS = [
 function SettingsPanel() {
   const project = useProject();
   const page = useActivePage();
-  const { setProjectName, setProjectFrameRate, setConnection, setPageSize, setPageLiveOffset, setTapTriggerMapping, setResetTriggerMapping, setPlayTriggerMapping, setStopTriggerMapping, setConnectedProtocol, connectedProtocols } = useStore((s) => ({
+  const { setProjectName, setProjectFrameRate, setConnection, setPageSize, setPageLiveOffset, setTapTriggerMapping, setResetTriggerMapping, setPlayTriggerMapping, setStopTriggerMapping, setConnectedProtocol, connectedProtocols } = useStore(useShallow((s) => ({
     setProjectName:          s.setProjectName,
     setProjectFrameRate:     s.setProjectFrameRate,
     setConnection:           s.setConnection,
@@ -1638,7 +1908,7 @@ function SettingsPanel() {
     setStopTriggerMapping:   s.setStopTriggerMapping,
     setConnectedProtocol:    s.setConnectedProtocol,
     connectedProtocols:      s.connectedProtocols,
-  }));
+  })));
 
   const [midiStatus,      setMidiStatus]      = useState<ConnStatus>(connectedProtocols['midi']      ? 'ok' : 'idle');
   const [midiInputStatus, setMidiInputStatus] = useState<ConnStatus>(connectedProtocols['midiInput'] ? 'ok' : 'idle');
@@ -1655,6 +1925,8 @@ function SettingsPanel() {
     midiInput:   project.connections.find((c) => c.type === 'midiInput')   as MidiInputConnection   | undefined,
     osc:         project.connections.find((c) => c.type === 'osc')         as OscConnection         | undefined,
     artnet:      project.connections.find((c) => c.type === 'artnet')      as ArtNetConnection      | undefined,
+    artnetInput: project.connections.find((c) => c.type === 'artnetInput') as ArtNetInputConnection | undefined,
+    sacnInput: project.connections.find((c) => c.type === 'sacnInput') as SacnInputConnection | undefined,
     sacn:        project.connections.find((c) => c.type === 'sacn')        as SacnConnection        | undefined,
     enttecDmx:   project.connections.find((c) => c.type === 'enttecDmx')  as EnttecDmxConnection   | undefined,
     ltcAudio:    project.connections.find((c) => c.type === 'ltcAudio')    as LtcAudioConnection    | undefined,
@@ -1852,11 +2124,21 @@ function SettingsPanel() {
       <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 16, letterSpacing: 0.5 }}>developed by VENTO in 2026</div>
       <div style={styles.header}>Settings</div>
 
+      <PaletteSection />
+
       <Section label="Project">
         <Field label="Name">
           <input style={styles.input} value={project.name}
             onChange={(e) => setProjectName(e.target.value)} />
         </Field>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', marginTop: 6 }}>
+          <input type="checkbox" checked={!!project.startInLive}
+            onChange={(e) => useStore.getState().setStartInLive(e.target.checked)} />
+          Open in Live mode at startup
+        </label>
+        <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
+          LiveForge always reopens the last project you saved or opened. For installations: put LiveForge in the startup apps, tick this, save — the PC boots straight into the show.
+        </div>
       </Section>
 
       <Section label="Trigger">
@@ -1878,8 +2160,7 @@ function SettingsPanel() {
                   dispatchButton(cell?.mapping ?? w.mapping, wr?.cells[i]?.active ?? false, cell?.onValue ?? 127, cell?.offValue ?? 0);
                 }
               } else if (w.kind === 'xyPad') {
-                dispatchValue(w.mappingX, wr?.cells[0]?.value ?? 0);
-                dispatchValue(w.mappingY, wr?.cells[1]?.value ?? 0);
+                (wr?.cells ?? []).forEach((c, i) => dispatchValue(xyMapping(w, i), c.value ?? 0));
               }
             }
           }
@@ -2166,6 +2447,11 @@ function SettingsPanel() {
           </ConnectBtn>
           <StatusBadge status={artnetStatus} />
         </div>
+
+        <ArtNetInputSettings
+          conn={conn.artnetInput}
+          onChange={(c) => setConnection(c)}
+        />
       </CollapsibleSection>
 
       <CollapsibleSection label="sACN / E1.31">
@@ -2205,6 +2491,15 @@ function SettingsPanel() {
           </ConnectBtn>
           <StatusBadge status={sacnStatus} />
         </div>
+
+        <SacnInputSettings
+          conn={conn.sacnInput}
+          onChange={(c) => setConnection(c)}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection label="DMX recordings">
+        <RecordingFolders />
       </CollapsibleSection>
 
       <CollapsibleSection label="Enttec Open DMX USB">
@@ -2340,10 +2635,10 @@ function SettingsPanel() {
 // ─── MIDI Clock section ───────────────────────────────────────────────────────
 
 function MidiClockSection() {
-  const { midiClockEnabled, setMidiClockEnabled } = useStore((s) => ({
+  const { midiClockEnabled, setMidiClockEnabled } = useStore(useShallow((s) => ({
     midiClockEnabled: s.midiClockEnabled,
     setMidiClockEnabled: s.setMidiClockEnabled,
-  }));
+  })));
 
   return (
     <CollapsibleSection label="MIDI Clock">
@@ -2373,14 +2668,14 @@ function MidiClockSection() {
 
 function NetworkLiveSection() {
   const { networkEnabled, networkPort, networkLocalIP, setNetworkEnabled, setNetworkPort, setNetworkLocalIP } =
-    useStore((s) => ({
+    useStore(useShallow((s) => ({
       networkEnabled: s.networkEnabled,
       networkPort: s.networkPort,
       networkLocalIP: s.networkLocalIP,
       setNetworkEnabled: s.setNetworkEnabled,
       setNetworkPort: s.setNetworkPort,
       setNetworkLocalIP: s.setNetworkLocalIP,
-    }));
+    })));
 
   const startNetworkSync = React.useCallback(() => {
     import('../../../network/networkSync').then((m) => m.startNetworkSync());
@@ -2443,8 +2738,8 @@ function NetworkLiveSection() {
           style={{
             ...styles.input, cursor: 'pointer', fontWeight: 600, minHeight: 40,
             background: networkEnabled ? '#1a2a1a' : 'var(--color-surface-2)',
-            color: networkEnabled ? '#00cc66' : 'var(--color-text)',
-            border: `1px solid ${networkEnabled ? '#00cc66' : 'var(--color-border)'}`,
+            color: networkEnabled ? pal('#3b8b91') : 'var(--color-text)',
+            border: `1px solid ${networkEnabled ? pal('#3b8b91') : 'var(--color-border)'}`,
           }}
         >
           {status === 'starting' ? '…' : networkEnabled ? '● ON' : 'Start'}
@@ -2452,7 +2747,7 @@ function NetworkLiveSection() {
       </Field>
 
       {status === 'error' && (
-        <div style={{ fontSize: 12, color: '#cc3333', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: pal('#d97a26'), marginTop: 4 }}>
           Failed to start — port may be in use.
         </div>
       )}
@@ -2460,7 +2755,7 @@ function NetworkLiveSection() {
       {url && (
         <div style={{ marginTop: 8, padding: '8px', background: 'var(--color-surface)', border: '1px solid #00cc6640', borderRadius: 3 }}>
           <div style={{ fontSize: 11, color: '#555', marginBottom: 4, letterSpacing: 1 }}>OPEN IN BROWSER</div>
-          <div style={{ fontSize: 12, color: '#00cc66', fontFamily: 'monospace', letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 12, color: pal('#3b8b91'), fontFamily: 'monospace', letterSpacing: 0.5 }}>
             {url}
           </div>
           <div style={{ fontSize: 11, color: '#444', marginTop: 4 }}>
@@ -2518,7 +2813,7 @@ function SourceSelect({ value, onChange, endpoint }: {
           <option value="">— no source —</option>
           {sources.map((s) => <option key={s} value={s}>{s}</option>)}
           {value && !sources.includes(value) && (
-            <option value={value} style={{ color: '#e6a000' }}>{value} (offline)</option>
+            <option value={value} style={{ color: pal('#e66b00') }}>{value} (offline)</option>
           )}
         </select>
         <button
@@ -2535,7 +2830,7 @@ function SourceSelect({ value, onChange, endpoint }: {
         </button>
       </div>
       {error && (
-        <div style={{ fontSize: 12, color: '#e6a000', lineHeight: 1.4 }}>{error}</div>
+        <div style={{ fontSize: 12, color: pal('#e66b00'), lineHeight: 1.4 }}>{error}</div>
       )}
       {!error && sources.length === 0 && !loading && (
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)' }}>
@@ -2663,7 +2958,6 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
   updateWidget: StoreState['updateWidget'];
   updateWidgetRect: StoreState['updateWidgetRect'];
 }) {
-  const activePage = useActivePage();
 
   function patch(partial: Partial<import('../../../../shared/types/project').SubmastersWidget>) {
     updateWidget(activePageId, widget.id, partial as never);
@@ -2681,12 +2975,16 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
     patch({ countX: safe, scenes: newScenes });
   }
 
+  // Only plain controls make sense in a scene: sliders, knobs, buttons, XY.
+  const project = useProject();
+  const eligible = project.pages.map((p) => ({ page: p, widgets: p.widgets.filter((w) => w.id !== widget.id && SUBMASTER_KINDS.has(w.kind)) }))
+    .filter((g) => g.widgets.length > 0);
+  const eligibleIds = eligible.flatMap((g) => g.widgets.map((w) => w.id));
   function handleAddLinked() {
-    const available = activePage?.widgets.find(
-      (w) => w.id !== widget.id && !widget.linkedWidgetIds.includes(w.id)
-    );
-    if (!available) return;
-    patch({ linkedWidgetIds: [...widget.linkedWidgetIds, available.id] });
+    const ids = widget.linkedWidgetIds;
+    const next = !ids.includes(SUBMASTER_ALL) && ids.length === 0 ? SUBMASTER_ALL : eligibleIds.find((id) => !ids.includes(id));
+    if (!next) return;
+    patch({ linkedWidgetIds: [...ids, next] });
   }
 
   function handleRemoveLinked(idx: number) {
@@ -2719,7 +3017,6 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
     patch({ scenes: newScenes });
   }
 
-  const pageWidgets = activePage?.widgets.filter((w) => w.id !== widget.id) ?? [];
 
   return (
     <>
@@ -2782,11 +3079,12 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
       </Section>
 
       <Section label="Linked Widgets">
-        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 8 }}>
-          Widgets controlled by this submaster.
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 8, lineHeight: 1.5 }}>
+          What the scenes record and play back: sliders, knobs, buttons and XY pads. "All widgets · all pages"
+          takes every one of them; replace it with single widgets to narrow it down.
         </div>
         {widget.linkedWidgetIds.map((wid, i) => {
-          const found = pageWidgets.find((w) => w.id === wid);
+          const found = wid === SUBMASTER_ALL || eligibleIds.includes(wid);
           return (
             <div key={i} style={{ display: 'flex', gap: 4, marginBottom: 4, alignItems: 'center' }}>
               <select
@@ -2795,8 +3093,11 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
                 style={{ ...styles.input, flex: 1 }}
               >
                 {!found && <option value={wid}>[deleted]</option>}
-                {pageWidgets.map((w) => (
-                  <option key={w.id} value={w.id}>{w.label || w.kind}</option>
+                <option value={SUBMASTER_ALL}>All widgets · all pages</option>
+                {eligible.map((g) => (
+                  <optgroup key={g.page.id} label={g.page.name}>
+                    {g.widgets.map((w) => <option key={w.id} value={w.id}>{w.label || w.kind}</option>)}
+                  </optgroup>
                 ))}
               </select>
               <button
@@ -2808,7 +3109,7 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
         })}
         <button
           onClick={handleAddLinked}
-          disabled={pageWidgets.length === 0 || pageWidgets.every((w) => widget.linkedWidgetIds.includes(w.id))}
+          disabled={widget.linkedWidgetIds.length > 0 && eligibleIds.every((id) => widget.linkedWidgetIds.includes(id))}
           style={{
             width: '100%', marginTop: 4, padding: '4px 0', fontSize: 12,
             background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
@@ -2857,7 +3158,7 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
                     : { type: 'midi', messageType: 'noteOn', channel: 1, number: 36 + i, minValue: 0, maxValue: 127 })}
                   style={{
                     background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
-                    color: scene.flashMapping ? '#ffaa00' : '#3a3a3a',
+                    color: scene.flashMapping ? pal('#ff7700') : '#3a3a3a',
                     padding: '0 2px', lineHeight: 1, flexShrink: 0,
                   }}
                 >⚡</button>
@@ -3028,7 +3329,7 @@ function AutoBpmInspectorPanel({ widget, activePageId, updateWidget, updateWidge
                 }}
               >
                 <span>x{D} {D === 1 ? '(every beat)' : D === 3 ? '(triplet bar)' : `(${D} beats)`}</span>
-                <span style={{ fontSize: 11, color: hasMapping ? '#00cc66' : '#333' }}>
+                <span style={{ fontSize: 11, color: hasMapping ? pal('#3b8b91') : '#333' }}>
                   {hasMapping ? '●' : '○'} {isOpen ? '▲' : '▼'}
                 </span>
               </button>
@@ -3083,12 +3384,15 @@ function RouterOutputEditor({ output, onChange, onRemove }: {
   function pm(partial: Partial<Mapping & object>) { onChange({ mapping: { ...output.mapping!, ...partial } as Mapping }); }
 
   // Widget cell target: compute available target widgets and their cells
-  const targetGroups = listLinkableSources(project);
+  // Only widgets that take a value in — an output cannot drive an output.
+  const targetGroups = project.pages
+    .map((pg) => ({ pageId: pg.id, pageName: pg.name, widgets: pg.widgets.filter((w) => targetCells(w).length > 0) }))
+    .filter((g) => g.widgets.length > 0);
   const allWidgets = project.pages.flatMap((pg) => pg.widgets);
   const targetWidget = allWidgets.find((w) => w.id === output.targetWidgetId);
   function getTargetCells(widgetId: string): { index: number; label: string }[] {
     const w = allWidgets.find((x) => x.id === widgetId);
-    return w ? sourceCells(w) : [];
+    return w ? targetCells(w) : [];
   }
 
   return (
@@ -3321,6 +3625,8 @@ function RouterInspectorPanel({ widget, activePageId, updateWidget, updateWidget
                   <option value="midiCC">MIDI CC</option>
                   <option value="midiNote">MIDI Note</option>
                   <option value="osc">OSC</option>
+                  <option value="artnet">Art-Net in</option>
+                  <option value="sacn">sACN in</option>
                 </select>
                 <button
                   onClick={() => removeRow(row.id)}
@@ -3380,6 +3686,24 @@ function RouterInspectorPanel({ widget, activePageId, updateWidget, updateWidget
                       value={row.midiNumber ?? 0}
                       min={0} max={127}
                       onChange={(v) => updateRow(row.id, { midiNumber: Math.max(0, Math.min(127, v)) })}
+                    />
+                  </Field>
+                </div>
+              )}
+              {(inputType === 'artnet' || inputType === 'sacn') && (
+                <div style={{ display: 'flex', gap: 4, marginBottom: 4, marginLeft: 22 }}>
+                  <Field label="Universe">
+                    <NumInput
+                      value={row.artnetUniverse ?? (inputType === 'sacn' ? 1 : 0)}
+                      min={inputType === 'sacn' ? 1 : 0} max={inputType === 'sacn' ? 63999 : 32767}
+                      onChange={(v) => updateRow(row.id, { artnetUniverse: inputType === 'sacn' ? Math.max(1, Math.min(63999, v)) : Math.max(0, Math.min(32767, v)) })}
+                    />
+                  </Field>
+                  <Field label="Channel">
+                    <NumInput
+                      value={row.artnetChannel ?? 1}
+                      min={1} max={512}
+                      onChange={(v) => updateRow(row.id, { artnetChannel: Math.max(1, Math.min(512, v)) })}
                     />
                   </Field>
                 </div>
@@ -3498,7 +3822,7 @@ function AudioAnalyserInspectorPanel({ widget, activePageId, updateWidget, updat
                 }}
               >
                 <span>×{D} {D === 1 ? '(every beat)' : D === 3 ? '(triplet bar)' : `(${D} beats)`}</span>
-                <span style={{ fontSize: 11, color: hasMapping ? '#00cc66' : '#333' }}>
+                <span style={{ fontSize: 11, color: hasMapping ? pal('#3b8b91') : '#333' }}>
                   {hasMapping ? '●' : '○'} {isOpen ? '▲' : '▼'}
                 </span>
               </button>
@@ -3666,7 +3990,8 @@ function SoundPlayerInspectorPanel({ widget, activePageId, updateWidget, updateW
 
       <Section label="Tracks">
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 8 }}>
-          Tracks are triggerable via Router (cell index = track index).
+          Each track is a trigger: link it from a timeline, a clock time, a button, DMX, OSC… (right-click ▶ on the widget,
+          Shift-patch, or the Router page). STOP / NEXT / PREV / FIRST are inputs too (the buttons in the widget header).
         </div>
         {widget.tracks.map((track, i) => (
           <div key={track.id} style={{
@@ -3714,6 +4039,14 @@ function SoundPlayerInspectorPanel({ widget, activePageId, updateWidget, updateW
                 <NumInput value={Math.round(track.volume * 100)}
                   onChange={(v) => updateTrack(track.id, { volume: Math.max(0, Math.min(100, v)) / 100 })} />
               </Field>
+              <Field label="At the end">
+                <select style={styles.input} value={track.end ?? 'stop'} onChange={(e) => updateTrack(track.id, { end: e.target.value as 'stop' | 'loop' | 'next' })}>
+                  <option value="stop">■ stop</option><option value="loop">⟳ loop</option><option value="next">⇥ next</option>
+                </select>
+              </Field>
+              <Field label="Fade s">
+                <NumInput value={track.fade ?? 0} step={0.5} onChange={(v) => updateTrack(track.id, { fade: Math.max(0, v) })} />
+              </Field>
             </Row>
 
             <div style={{ marginTop: 6 }}>
@@ -3743,7 +4076,7 @@ function SoundPlayerInspectorPanel({ widget, activePageId, updateWidget, updateW
 
 function NoSelectionPanel() {
   const project = useProject();
-  const { setProjectName } = useStore((s) => ({ setProjectName: s.setProjectName }));
+  const { setProjectName } = useStore(useShallow((s) => ({ setProjectName: s.setProjectName })));
 
   const conns = project.connections;
   const midiConn      = conns.find((c) => c.type === 'midi')        as MidiConnection        | undefined;
@@ -4079,6 +4412,72 @@ function ColorInput({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+// ─── Linked parameters ────────────────────────────────────────────────────────
+// A parameter that has a remote input (Router, Shift, Learn) linked to it is
+// shown greyed and not clickable: the link drives it.
+
+function useLinkedInputs(widgetId: string): Set<number> {
+  const project = useProject();
+  return React.useMemo(() => computeSlavedCellSet(project, widgetId), [project, widgetId]);
+}
+
+function Gate({ linked, children }: { linked: boolean; children: React.ReactNode }) {
+  if (!linked) return <>{children}</>;
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }}>{children}</div>
+      <div style={{ position: 'absolute', right: 0, top: 0, fontSize: 10, color: 'var(--color-accent)', letterSpacing: 1 }}>⇄ LINKED</div>
+    </div>
+  );
+}
+
+// Play / Stop / Reset act on the running widget (Live), like its own buttons.
+function TransportButtons({ widgetId, playLinked, resetLinked }: { widgetId: string; playLinked: boolean; resetLinked: boolean }) {
+  const playing = useStore((s) => s.runtime.widgets[widgetId]?.playing ?? false);
+  const btn = (on: boolean, linked: boolean): React.CSSProperties => ({
+    flex: 1, padding: '6px 0', fontSize: 12, borderRadius: 3, whiteSpace: 'nowrap',
+    background: on ? 'var(--color-accent)' : 'var(--color-surface-2)',
+    border: `1px solid ${on ? 'var(--color-accent)' : 'var(--color-border)'}`,
+    color: on ? '#000' : 'var(--color-text)',
+    opacity: linked ? 0.35 : 1, cursor: linked ? 'default' : 'pointer', pointerEvents: linked ? 'none' : 'auto',
+  });
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <button style={btn(playing, playLinked)} onClick={() => useStore.getState().setWidgetPlaying(widgetId, true)}>▶ Play</button>
+        <button style={btn(!playing, playLinked)} onClick={() => useStore.getState().setWidgetPlaying(widgetId, false)}>■ Stop</button>
+        <button style={btn(false, resetLinked)} onClick={() => pulseParamInput(widgetId, 'reset')}>⟲ Reset</button>
+      </div>
+      {(playLinked || resetLinked) && (
+        <div style={{ fontSize: 10, color: 'var(--color-accent)', letterSpacing: 1, marginTop: 4, textAlign: 'right' }}>
+          ⇄ LINKED: {[playLinked && 'PLAY', resetLinked && 'RESET'].filter(Boolean).join(', ')}
+        </div>
+      )}
+    </>
+  );
+}
+
+// Step Sequencer and Graph: transport + speed, same inputs as the LFO.
+function GenTransportSection({ widget, speed, onSpeed }: { widget: { id: string }; speed: SpeedMultiplier; onSpeed: (s: SpeedMultiplier) => void }) {
+  const linked = useLinkedInputs(widget.id);
+  return (
+    <Section label="Transport">
+      <TransportButtons widgetId={widget.id} playLinked={linked.has(-1)} resetLinked={linked.has(-3)} />
+      <div style={{ height: 6 }} />
+      <Gate linked={linked.has(-2)}>
+        <Field label="Speed">
+          <select style={styles.input} value={String(speed)} onChange={(e) => onSpeed(Number(e.target.value) as SpeedMultiplier)}>
+            {GEN_SPEEDS.map((v) => <option key={v} value={v}>{v < 1 ? `1/${1 / v}` : `${v}x`}</option>)}
+          </select>
+        </Field>
+      </Gate>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+        Remote inputs PLAY, SPEED, RESET: Shift-patch the dots on the top edge, or the Router page. A linked one is greyed here.
+      </div>
+    </Section>
+  );
+}
+
 // ─── LFO Inspector Panel ──────────────────────────────────────────────────────
 
 function LfoInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
@@ -4088,10 +4487,14 @@ function LfoInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRec
   updateWidgetRect: StoreState['updateWidgetRect'];
 }) {
   function patch(partial: Partial<LfoWidget>) { updateWidget(activePageId, widget.id, partial as never); }
+  const linked = useLinkedInputs(widget.id);
 
   return (
     <>
-      <div style={styles.header}>LFO</div>
+      <div style={styles.header}>{widget.kind === 'noiseWidget' ? 'Noise' : 'LFO'}</div>
+      <Section label="Transport">
+        <TransportButtons widgetId={widget.id} playLinked={linked.has(-1)} resetLinked={linked.has(-7)} />
+      </Section>
       <Section label="Label">
         <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
       </Section>
@@ -4112,35 +4515,76 @@ function LfoInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRec
           <option value="saw">Sawtooth</option>
           <option value="triangle">Triangle</option>
           <option value="random">Random (S&H)</option>
+          <option value="noise">Noise (smooth)</option>
         </select>
       </Section>
-      <Section label="Rate">
-        <Field label="Mode">
-          <select style={styles.input} value={widget.rateMode} onChange={(e) => patch({ rateMode: e.target.value as 'bpm' | 'hz' })}>
-            <option value="bpm">BPM-synced</option>
-            <option value="hz">Hz</option>
-          </select>
-        </Field>
-        {widget.rateMode === 'bpm' ? (
-          <Field label="Beats/cycle">
-            <NumInput value={widget.rateMultiplier} onChange={(v) => patch({ rateMultiplier: Math.max(0.0625, v) })} step={0.25} />
+      <Section label="Frequency">
+        <Gate linked={linked.has(-2)}>
+          <Field label="Mode">
+            <select style={styles.input} value={widget.rateMode} onChange={(e) => patch({ rateMode: e.target.value as 'bpm' | 'hz' })}>
+              <option value="bpm">BPM-synced</option>
+              <option value="hz">Hz</option>
+            </select>
           </Field>
-        ) : (
-          <Field label="Hz">
-            <NumInput value={widget.rateHz} onChange={(v) => patch({ rateHz: Math.max(0.01, v) })} step={0.1} />
+          {widget.rateMode === 'bpm' ? (
+            <Field label="Beats/cycle">
+              <NumInput value={widget.rateMultiplier} onChange={(v) => patch({ rateMultiplier: Math.max(0.0625, v) })} step={0.25} />
+            </Field>
+          ) : (
+            <Field label="Hz">
+              <NumInput value={widget.rateHz} onChange={(v) => patch({ rateHz: Math.max(0.01, v) })} step={0.1} />
+            </Field>
+          )}
+          <Field label="Speed">
+            <select style={styles.input} value={String(widget.speed ?? 1)} onChange={(e) => patch({ speed: Number(e.target.value) })}>
+              {[0.25, 0.5, 1, 2, 4].map((v) => <option key={v} value={v}>×{v}</option>)}
+            </select>
+          </Field>
+        </Gate>
+      </Section>
+      <Section label="Shape">
+        <Gate linked={linked.has(-3)}>
+          <Field label="Amplitude">
+            <NumInput value={widget.amplitude} onChange={(v) => patch({ amplitude: Math.max(0, Math.min(2, v)) })} step={0.01} />
+          </Field>
+        </Gate>
+        <Field label="Center">
+          <NumInput value={widget.center ?? 0.5} onChange={(v) => patch({ center: Math.max(0, Math.min(1, v)) })} step={0.01} />
+        </Field>
+        <Gate linked={linked.has(-5)}>
+          <Field label={widget.waveform === 'noise' ? 'Roughness (−1 smooth … 1 rough)' : 'Bias'}>
+            <NumInput value={widget.bias ?? 0} onChange={(v) => patch({ bias: Math.max(-1, Math.min(1, v)) })} step={0.05} />
+          </Field>
+        </Gate>
+        {widget.waveform === 'noise' && (
+          <Field label="Seed (same seed = same curve)">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 1 }}>
+                <NumInput value={widget.seed ?? 0} onChange={(v) => patch({ seed: Math.max(0, Math.min(9999, Math.round(v))) })} step={1} />
+              </div>
+              <button title="New random seed" onClick={() => patch({ seed: 1 + Math.floor(Math.random() * 9999) })}
+                style={{ padding: '0 10px', cursor: 'pointer', background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: 3, fontFamily: 'inherit' }}>🎲</button>
+            </div>
           </Field>
         )}
       </Section>
-      <Section label="Shape">
-        <Field label="Amplitude">
-          <NumInput value={widget.amplitude} onChange={(v) => patch({ amplitude: Math.max(0, Math.min(2, v)) })} step={0.01} />
-        </Field>
-        <Field label="Offset">
-          <NumInput value={widget.offset} onChange={(v) => patch({ offset: Math.max(0, Math.min(1, v)) })} step={0.01} />
-        </Field>
-        <Field label="Phase">
-          <NumInput value={widget.phase} onChange={(v) => patch({ phase: ((v % 1) + 1) % 1 })} step={0.01} />
-        </Field>
+      <Section label="Phase">
+        <Gate linked={linked.has(-4)}>
+          <Field label="Offset (all)">
+            <NumInput value={widget.offset} onChange={(v) => patch({ offset: Math.max(0, Math.min(1, v)) })} step={0.01} />
+          </Field>
+        </Gate>
+        <Gate linked={linked.has(-6)}>
+          <Field label="Phase (spread)">
+            <NumInput value={widget.phase} onChange={(v) => patch({ phase: Math.max(0, Math.min(1, v)) })} step={0.01} />
+          </Field>
+        </Gate>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Offset moves every output forward together (0.5 = half a cycle: a sine starts at the top). Phase spreads the outputs
+          by index: output k of n is phase × k/(n−1) after the first — 0 = all identical, 0.5 with 4 outputs = 0, ⅙, ⅓, ½ of a cycle.
+          Remote inputs: PLAY, FREQ (0.01–20 Hz, replaces mode and speed), AMP, OFFSET, BIAS, PHASE, RESET. Link them with Shift (dots on the top edge),
+          the Router page, or right-click the speed badge. A linked one is greyed here.
+        </div>
       </Section>
       <Section label="Output">
         <MappingEditor mapping={widget.mapping} onChange={(m) => patch({ mapping: m })} />
@@ -4159,11 +4603,396 @@ function LfoInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRec
           onChange={(m) => patch({ stopMapping: m })}
         />
       </Section>
+      <Section label={`Outputs (${1 + (widget.lanes?.length ?? 0)})`}>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
+          ＋ adds an output with the same wave. Their phases come from Phase (spread by index), shown as φ on the widget.
+        </div>
+        {(widget.lanes ?? []).map((l, k) => (
+          <Row key={l.id}>
+            <div style={{ flex: 1, fontSize: 12, color: 'var(--color-text-dim)', alignSelf: 'center' }}>
+              out {k + 2} · φ {(widget.phase * (k + 1) / (widget.lanes!.length)).toFixed(3)}
+            </div>
+            <button onClick={() => removeLane(widget, k)} title="Remove"
+              style={{ background: 'none', border: '1px solid #333', color: pal('#d97a26'), cursor: 'pointer', borderRadius: 2, height: 28 }}>✕</button>
+          </Row>
+        ))}
+        <button onClick={() => addLane(widget)} style={{ ...styles.input, cursor: 'pointer', marginTop: 4 }}>＋ Output</button>
+      </Section>
     </>
   );
 }
 
 // ─── Master Level Inspector Panel ─────────────────────────────────────────────
+
+// ─── DMX Recorder / Player ────────────────────────────────────────────────────
+
+function PositionSection({ widget, activePageId, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').Widget; activePageId: string; updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  return (
+    <Section label="Position">
+      <Row>
+        <Field label="X"><NumInput value={widget.rect.x} onChange={(v) => updateWidgetRect(activePageId, widget.id, { x: v })} /></Field>
+        <Field label="Y"><NumInput value={widget.rect.y} onChange={(v) => updateWidgetRect(activePageId, widget.id, { y: v })} /></Field>
+      </Row>
+      <Row>
+        <Field label="W"><NumInput value={widget.rect.width} onChange={(v) => updateWidgetRect(activePageId, widget.id, { width: v })} /></Field>
+        <Field label="H"><NumInput value={widget.rect.height} onChange={(v) => updateWidgetRect(activePageId, widget.id, { height: v })} /></Field>
+      </Row>
+    </Section>
+  );
+}
+
+// Every take on disk: rename in place, delete, and where the files live.
+function PlaylistTakeSelect({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const takes = useTakes();
+  return (
+    <select style={{ ...styles.input, flex: 1, minWidth: 0 }} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">— take —</option>
+      {takes.map((t) => <option key={t.id} value={t.id}>{t.name} · {fmtTime(t.durationMs)}</option>)}
+      {value && !takes.some((t) => t.id === value) && <option value={value}>missing take</option>}
+    </select>
+  );
+}
+
+function TakesSection({ selectedId, onSelect }: { selectedId?: string; onSelect?: (id: string) => void }) {
+  const takes = useTakes();
+  const [folder, setFolder] = useState('');
+  useEffect(() => {
+    void refreshTakes();
+    bridge.invoke('tr:dmxRec:getFolders', undefined).then((f) => setFolder(f ? (f.record === f.play ? f.record : `REC → ${f.record}\nPlayer ← ${f.play}`) : '')).catch(() => {});
+  }, []);
+  return (
+    <Section label={`Takes (${takes.length})`}>
+      {takes.length === 0 && <div style={{ fontSize: 12, color: 'var(--color-text-dim)' }}>No takes yet — hit REC on a Recorder.</div>}
+      {takes.map((t) => (
+        <div key={t.id} style={{
+          display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, padding: '2px 4px', borderRadius: 3,
+          background: t.id === selectedId ? `rgba(${palRgb('#ff881f')},0.12)` : undefined,
+        }}>
+          {onSelect && (
+            <input type="radio" checked={t.id === selectedId} onChange={() => onSelect(t.id)} title="Play this take" />
+          )}
+          <input style={{ ...styles.input, flex: 1, fontSize: 12 }} defaultValue={t.name}
+            onBlur={(e) => { if (e.target.value !== t.name) void bridge.invoke('tr:dmxRec:rename', { takeId: t.id, name: e.target.value }).then(() => refreshTakes()); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+          <span style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap' }}>{fmtTime(t.durationMs)} · {fmtBytes(t.bytes)}</span>
+          <button title="Delete take" onClick={() => { void bridge.invoke('tr:dmxRec:delete', { takeId: t.id }).then(() => refreshTakes()); }}
+            style={{ background: 'none', border: 'none', color: pal('#d97a26'), cursor: 'pointer', fontSize: 13 }}>✕</button>
+        </div>
+      ))}
+      {folder && <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 6, wordBreak: 'break-all', whiteSpace: 'pre-line' }}>{folder} · change in Settings → DMX recordings</div>}
+    </Section>
+  );
+}
+
+function DmxMonitorInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').DmxMonitorWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(partial: Partial<import('../../../../shared/types/project').DmxMonitorWidget>) { updateWidget(activePageId, widget.id, partial as never); }
+  const project = useProject();
+  return (
+    <>
+      <div style={styles.header}>DMX Monitor</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Source">
+        <Row>
+          <Field label="Direction">
+            <select style={styles.input} value={widget.source} onChange={(e) => patch({ source: e.target.value as 'in' | 'out' })}>
+              <option value="in">IN — what arrives</option>
+              <option value="out">OUT — what LiveForge sends</option>
+            </select>
+          </Field>
+          {(
+            <Field label="Protocol">
+              <select style={styles.input} value={widget.protocol} onChange={(e) => patch({ protocol: e.target.value as 'artnet' | 'sacn', outputId: '' })}>
+                <option value="artnet">Art-Net</option>
+                <option value="sacn">sACN / E1.31</option>
+              </select>
+            </Field>
+          )}
+        </Row>
+        <Row>
+          <Field label={widget.source === 'in' ? 'From (sender IP)' : 'To (destination)'}>
+            <select style={styles.input}
+              value={widget.source === 'in' ? (widget.sourceIp ?? '') : (widget.outputId ?? '')}
+              onChange={(e) => patch(widget.source === 'in' ? { sourceIp: e.target.value } : { outputId: e.target.value })}>
+              {(widget.source === 'in' ? monInOptions() : monOutOptions(project.connections, widget.protocol)).map((o) =>
+                <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Universe"><NumInput value={widget.universe} min={0} max={32767} onChange={(v) => patch({ universe: Math.max(0, Math.min(32767, v)) })} /></Field>
+        </Row>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          IN lists every sender heard so far, plus localhost for apps on this PC (needs Settings → Art-Net / sACN → Input on;
+          sACN listens to the universes listed there). OUT lists the Art-Net / sACN destinations set in Settings; "all outputs" merges them highest-wins.
+        </div>
+      </Section>
+      <Section label="Grid">
+        <Row>
+          <Field label="Columns"><NumInput value={widget.cols} min={1} max={128} onChange={(v) => patch({ cols: Math.max(1, Math.min(128, v)) })} /></Field>
+          <Field label="Rows"><NumInput value={widget.rows} min={1} max={128} onChange={(v) => patch({ rows: Math.max(1, Math.min(128, v)) })} /></Field>
+        </Row>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6 }}>
+          {widget.cols * widget.rows >= 512
+            ? 'The whole universe fits.'
+            : `${widget.cols * widget.rows} channels at a time — scroll with the bar on the right or the mouse wheel.`}
+        </div>
+      </Section>
+    </>
+  );
+}
+
+function ClockInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').ClockWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(partial: Partial<import('../../../../shared/types/project').ClockWidget>) { updateWidget(activePageId, widget.id, partial as never); }
+  return (
+    <>
+      <div style={styles.header}>Clock</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Display">
+        <Row>
+          <Field label="Colour">
+            <input type="color" value={widget.style.foregroundColor || pal('#ff902f')}
+              onChange={(e) => patch({ style: { ...widget.style, foregroundColor: e.target.value } })} />
+          </Field>
+          <Field label="Seconds">
+            <input type="checkbox" checked={widget.showSeconds} onChange={(e) => patch({ showSeconds: e.target.checked })} />
+          </Field>
+        </Row>
+      </Section>
+      <Section label="Triggers">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 40 }}>
+          <ClockAlarms widget={widget} />
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Each time fires every day when the computer's clock reaches it — a short pulse on that row's output.
+          Link it from the Router page or with Shift (orange dot on the row).
+        </div>
+      </Section>
+    </>
+  );
+}
+
+function DmxRecorderInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').DmxRecorderWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(partial: Partial<import('../../../../shared/types/project').DmxRecorderWidget>) { updateWidget(activePageId, widget.id, partial as never); }
+  const parsed = parseUniverses(widget.universes ?? '');
+  return (
+    <>
+      <div style={styles.header}>DMX Recorder</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Source">
+        <select style={styles.input} value={widget.source ?? 'artnet'} onChange={(e) => patch({ source: e.target.value as NonNullable<typeof widget.source> })}>
+          <option value="artnet">IN — Art-Net input</option>
+          <option value="sacn">IN — sACN input</option>
+          <option value="out-artnet">OUT — what LiveForge sends on Art-Net</option>
+          <option value="out-sacn">OUT — what LiveForge sends on sACN</option>
+          <option value="out-enttec">OUT — what LiveForge sends on Open DMX (Enttec)</option>
+        </select>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          IN needs that input on in Settings (for sACN, the universes it listens to). OUT records LiveForge's own output —
+          every widget, link, LFO and player merged — sampled 44 times a second, every universe in use (Open DMX = universe 0).
+          A take holds one source.
+        </div>
+      </Section>
+      <Section label="Universes">
+        <input style={styles.input} placeholder="empty = every universe heard" value={widget.universes ?? ''}
+          onChange={(e) => patch({ universes: e.target.value })} />
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          {parsed.length ? `Records ${parsed.join(', ')}.` : 'Records every Art-Net universe arriving.'} Comma list or ranges: 0, 1, 4-6.
+          Needs Settings → Art-Net → Input on. REC is a cell: link it from the Router.
+        </div>
+      </Section>
+      <TakesSection />
+    </>
+  );
+}
+
+function DmxPlayerInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').DmxPlayerWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(partial: Partial<import('../../../../shared/types/project').DmxPlayerWidget>) { updateWidget(activePageId, widget.id, partial as never); }
+  return (
+    <>
+      <div style={styles.header}>DMX Player</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Output">
+        <Row>
+          <Field label="Protocol">
+            <select style={styles.input} value={widget.playProtocol ?? 'artnet'} onChange={(e) => patch({ playProtocol: e.target.value as 'artnet' | 'sacn' })}>
+              <option value="artnet">Art-Net</option>
+              <option value="sacn">sACN / E1.31</option>
+            </select>
+          </Field>
+          <Field label="Universe offset">
+            <NumInput value={widget.universeOffset ?? 0} onChange={(v) => patch({ universeOffset: Math.max(-32767, Math.min(32767, v)) })} />
+          </Field>
+        </Row>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Goes out through the Art-Net / sACN connection in Settings — connect it there. Offset moves every
+          recorded universe (recorded 0 with offset 4 plays on 4).
+        </div>
+      </Section>
+      <Section label={`Playlist (${(widget.items ?? []).length})`}>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
+          Each item is a trigger: link it from a timeline, a clock time, a button, DMX, OSC… (right-click ▶ on the widget,
+          Shift-patch, or the Router page). STOP / NEXT / PREV / FIRST are inputs too. ■ ⟳ ⇥ = at the end stop, loop, or play the next; fade in seconds.
+        </div>
+        {(widget.items ?? []).map((it, k) => (
+          <Row key={it.id}>
+            <span style={{ fontSize: 12, color: '#666', alignSelf: 'center', width: 18 }}>{k + 1}</span>
+            <PlaylistTakeSelect value={it.takeId} onChange={(id) => patch({ items: widget.items.map((x, j) => (j === k ? { ...x, takeId: id } : x)) })} />
+            <select style={{ ...styles.input, width: 78 }} value={it.end} onChange={(e) => patch({ items: widget.items.map((x, j) => (j === k ? { ...x, end: e.target.value as 'stop' | 'loop' | 'next' } : x)) })}>
+              <option value="stop">■ stop</option><option value="loop">⟳ loop</option><option value="next">⇥ next</option>
+            </select>
+            <div style={{ width: 64 }}><NumInput value={it.fade ?? 0} step={0.5} onChange={(v) => patch({ items: widget.items.map((x, j) => (j === k ? { ...x, fade: Math.max(0, v) } : x)) })} /></div>
+            <button onClick={() => { useStore.getState().dropCellAndShiftLinks(widget.id, k); patch({ items: widget.items.filter((_, j) => j !== k) }); }}
+              style={{ background: 'none', border: '1px solid #333', color: pal('#de8b43'), cursor: 'pointer', borderRadius: 2, height: 28 }}>✕</button>
+          </Row>
+        ))}
+        <button onClick={() => patch({ items: [...(widget.items ?? []), { id: crypto.randomUUID(), takeId: '', end: 'stop', fade: 0 }] })}
+          style={{ ...styles.input, cursor: 'pointer', marginTop: 4 }}>＋ Item</button>
+      </Section>
+      <TakesSection />
+    </>
+  );
+}
+
+function SketchInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').SketchWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(p: Partial<import('../../../../shared/types/project').SketchWidget>) { updateWidget(activePageId, widget.id, p as never); }
+  const linked = useLinkedInputs(widget.id);
+  return (
+    <>
+      <div style={styles.header}>Sketch</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Transport">
+        <TransportButtons widgetId={widget.id} playLinked={linked.has(-1)} resetLinked={linked.has(-3)} />
+        <div style={{ height: 6 }} />
+        <Row>
+          <Field label="Seconds per run"><NumInput value={widget.duration} step={0.5} onChange={(v) => patch({ duration: Math.max(0.1, v) })} /></Field>
+          <Gate linked={linked.has(-2)}>
+            <Field label="Speed">
+              <select style={styles.input} value={String(widget.speed ?? 1)} onChange={(e) => patch({ speed: Number(e.target.value) })}>
+                {GEN_SPEEDS.map((v) => <option key={v} value={v}>{v < 1 ? `1/${1 / v}` : `${v}x`}</option>)}
+              </select>
+            </Field>
+          </Gate>
+        </Row>
+        <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+          {([['stop', 'Stop at the end', { loop: false, pingPong: false }], ['loop', 'Loop', { loop: true, pingPong: false }], ['ping', 'Ping-pong', { loop: true, pingPong: true }]] as const).map(([k, label, p]) => (
+            <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+              <input type="radio" name={`sketch-mode-${widget.id}`} checked={(!widget.loop ? 'stop' : widget.pingPong ? 'ping' : 'loop') === k} onChange={() => patch(p)} /> {label}
+            </label>
+          ))}
+        </div>
+      </Section>
+      <Section label="Dots">
+        <Row>
+          <Field label="How many"><NumInput value={widget.dots} min={1} max={32} onChange={(v) => patch({ dots: Math.max(1, Math.min(32, Math.round(v))) })} /></Field>
+          <Field label="Delay"><NumInput value={widget.delay} step={0.01} onChange={(v) => patch({ delay: Math.max(0, Math.min(1, v)) })} /></Field>
+        </Row>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Delay = distance between one dot and the next, as a part of the whole drawing (0.1 = a tenth behind).
+          Dot k puts out X and Y on its own two cells (Y up, like the XY pad): link them to pan / tilt, or to an XY pad's dots to see them.
+        </div>
+      </Section>
+      <Section label="Drawing">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+          <input type="checkbox" checked={widget.showGrid} onChange={(e) => patch({ showGrid: e.target.checked })} /> Background grid
+        </label>
+        <Field label={`Smooth ${Math.round((widget.smooth ?? 0) * 100)}%`}>
+          <input type="range" min={0} max={1} step={0.01} value={widget.smooth ?? 0} onChange={(e) => patch({ smooth: Number(e.target.value) })} style={{ width: '100%' }} />
+        </Field>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          {(widget.strokes ?? []).length} line(s). Draw in Live; lines play one after the other in the order drawn. Alt+click a line to delete it.
+        </div>
+        <button onClick={() => patch({ strokes: [] })} style={{ ...styles.input, cursor: 'pointer', marginTop: 6, color: pal('#e39d60') }}>Clear drawing</button>
+      </Section>
+    </>
+  );
+}
+
+function AudioLevelInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').AudioLevelWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(p: Partial<import('../../../../shared/types/project').AudioLevelWidget>) { updateWidget(activePageId, widget.id, p as never); }
+  const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  useEffect(() => {
+    navigator.mediaDevices?.enumerateDevices().then((d) => setInputs(d.filter((x) => x.kind === 'audioinput'))).catch(() => {});
+  }, []);
+  return (
+    <>
+      <div style={styles.header}>Audio Level</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Mode">
+        <select style={styles.input} value={widget.mode} onChange={(e) => patch({ mode: e.target.value as 'in' | 'out' })}>
+          <option value="out">OUT — master volume of all audio played</option>
+          <option value="in">IN — level meter of an audio input</option>
+        </select>
+        {widget.mode === 'in' && (
+          <Field label="Input device">
+            <select style={styles.input} value={widget.deviceId ?? ''} onChange={(e) => patch({ deviceId: e.target.value })}>
+              <option value="">Settings → Audio in (or the default)</option>
+              {inputs.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label="Orientation">
+          <select style={styles.input} value={widget.orientation ?? 'vertical'} onChange={(e) => patch({ orientation: e.target.value as 'vertical' | 'horizontal' })}>
+            <option value="vertical">Vertical</option>
+            <option value="horizontal">Horizontal</option>
+          </select>
+        </Field>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          OUT scales every Sound Player track and every timeline audio track, from any page; its fader is a cell, so a
+          MIDI fader, OSC or the Router can drive it. IN measures the input (−60…0 dB as 0…1) and outputs it as a cell:
+          link it to a dimmer, an LFO's AMP, a button… It runs in Live.
+        </div>
+      </Section>
+    </>
+  );
+}
 
 function MasterLevelInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
   widget: import('../../../../shared/types/project').MasterLevelWidget;
@@ -4306,14 +5135,14 @@ function KeyboardInspectorPanel({ widget, activePageId, updateWidget, updateWidg
           onClick={() => { setError(null); setCapturing((v) => !v); }}
           style={{
             ...styles.input, minHeight: 44, cursor: 'pointer', fontWeight: 700,
-            background: capturing ? '#3a2a1a' : 'var(--color-surface-2)',
-            color: capturing ? '#ff9d3a' : 'var(--color-text)',
-            border: `1px solid ${capturing ? '#ff9d3a' : 'var(--color-border)'}`,
+            background: capturing ? pal('#3a291a') : 'var(--color-surface-2)',
+            color: capturing ? pal('#ff963a') : 'var(--color-text)',
+            border: `1px solid ${capturing ? pal('#ff963a') : 'var(--color-border)'}`,
           }}
         >
           {capturing ? '⬤ press a key…  (Esc cancels)' : '＋ Add key'}
         </button>
-        {error && <div style={{ fontSize: 12, color: '#cc5555', marginTop: 6 }}>{error}</div>}
+        {error && <div style={{ fontSize: 12, color: pal('#de8b43'), marginTop: 6 }}>{error}</div>}
 
         <div style={{ marginTop: 10 }}>
           {widget.keys.length === 0 && (
@@ -4438,7 +5267,8 @@ function InstanceInspectorPanel({ widget, activePageId, updateWidget, updateWidg
   updateWidgetRect: StoreState['updateWidgetRect'];
 }) {
   const project = useStore((s) => s.project);
-  const sources = project.pages.flatMap((p) => p.widgets).filter((w) => w.id !== widget.id && w.kind !== 'instance');
+  // Widgets you play by hand — mirroring a generator or a player would run it twice.
+  const sources = project.pages.flatMap((p) => p.widgets).filter((w) => w.id !== widget.id && INSTANCE_KINDS.has(w.kind));
   function patch(partial: Partial<import('../../../../shared/types/project').InstanceWidget>) { updateWidget(activePageId, widget.id, partial as never); }
 
   return (
@@ -4483,7 +5313,7 @@ function MathInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRe
   updateWidgetRect: StoreState['updateWidgetRect'];
 }) {
   const page = useActivePage();
-  const widgetOptions = page?.widgets.filter((w) => w.id !== widget.id) ?? [];
+  const widgetOptions = page?.widgets.filter((w) => w.id !== widget.id && isLinkSource(w)) ?? [];
   function patch(partial: Partial<MathWidget>) { updateWidget(activePageId, widget.id, partial as never); }
 
   const usesB = ['add', 'subtract', 'multiply', 'min', 'max', 'avg'].includes(widget.operation);
@@ -4593,7 +5423,7 @@ function getCellCount(w: import('../../../../shared/types/project').Widget): num
   if ('cells' in w && Array.isArray(w.cells)) return w.cells.length;
   if (w.kind === 'xyPad') return 2;
   if (w.kind === 'autoBpm') return 16;
-  if (w.kind === 'lfoWidget' || w.kind === 'mathWidget') return 1;
+  if (w.kind === 'lfoWidget' || w.kind === 'noiseWidget' || w.kind === 'mathWidget') return 1;
   if (w.kind === 'graphWidget' || w.kind === 'stepSequencer') return 1;
   return 0;
 }
@@ -4609,7 +5439,7 @@ function ValueDisplayInspectorPanel({ widget, activePageId, updateWidget, update
   // Sources span every page — the runtime is global, so a cross-page readout works.
   const project = useStore((s) => s.project);
   const allWidgets = project.pages.flatMap((p) => p.widgets);
-  const widgetOptions = allWidgets.filter((w) => w.id !== widget.id);
+  const widgetOptions = allWidgets.filter((w) => w.id !== widget.id && isLinkSource(w));
   function patch(partial: Partial<ValueDisplayWidget>) { updateWidget(activePageId, widget.id, partial as never); }
 
   function cellOptions(widgetId: string): { index: number; label: string }[] {

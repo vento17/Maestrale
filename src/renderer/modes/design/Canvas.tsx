@@ -1,4 +1,6 @@
+import { pal, palRgb, onPalette } from '../../palette';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Rnd } from 'react-rnd';
 import type { Widget } from '../../../shared/types/project';
 import { useStore, useActivePage } from '../../store';
@@ -6,6 +8,15 @@ import { GRID_SNAP_PX } from '../../../shared/constants';
 import WidgetPicker from './WidgetPicker';
 import WidgetPreview from '../../widgets/base/WidgetPreview';
 import CellEditModal from '../../widgets/base/CellEditModal';
+import PlacementLayer from './PlacementLayer';
+
+const snap = (v: number): number => Math.round(v / GRID_SNAP_PX) * GRID_SNAP_PX;
+// Snapped, and kept on the page: rounding up must not push the far edge out.
+function snapIn(v: number, size: number, page: number): number {
+  let x = Math.max(0, snap(v));
+  while (x > 0 && x + size > page) x -= GRID_SNAP_PX;
+  return x;
+}
 
 export default function Canvas(): React.JSX.Element {
   const page = useActivePage();
@@ -15,7 +26,7 @@ export default function Canvas(): React.JSX.Element {
     isWidgetPickerOpen,
     updateWidgetRect, bringWidgetToFront, removeWidget, activePageId,
     captureHistory, undo, copyWidgets, cutWidgets, pasteWidgets,
-  } = useStore((s) => ({
+  } = useStore(useShallow((s) => ({
     selectedWidgetId:      s.selectedWidgetId,
     setSelectedWidgetId:   s.setSelectedWidgetId,
     selectedWidgetIds:     s.selectedWidgetIds,
@@ -31,9 +42,10 @@ export default function Canvas(): React.JSX.Element {
     copyWidgets:           s.copyWidgets,
     cutWidgets:            s.cutWidgets,
     pasteWidgets:          s.pasteWidgets,
-  }));
+  })));
 
   const outerRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null);
   // Touch long-press → delete popup, so a widget can be removed without a keyboard.
@@ -83,6 +95,9 @@ export default function Canvas(): React.JSX.Element {
   }, [computeScale]);
 
   const pageWidth  = page?.width  ?? 1920;
+  // Every position and size lands on the grid — absolute, not "in steps from
+  // where it was" — so edges of different widgets line up. Something pushed
+  // against the far edge of the page stays inside it.
   const pageHeight = page?.height ?? 1080;
 
   const allSelectedIds = selectedWidgetId
@@ -166,17 +181,19 @@ export default function Canvas(): React.JSX.Element {
           return;
         }
         if (e.ctrlKey || e.metaKey) {
-          if (e.key === 'z') {
+          // Caps Lock (or Shift) turns 'c' into 'C': the shortcut must not care.
+          const key = e.key.toLowerCase();
+          if (key === 'z') {
             undo();
             e.preventDefault();
-          } else if (e.key === 'c' && allSelectedIds.length > 0) {
+          } else if (key === 'c' && allSelectedIds.length > 0) {
             const ws = (page?.widgets ?? []).filter((w) => allSelectedIds.includes(w.id));
             if (ws.length > 0) copyWidgets(ws);
             e.preventDefault();
-          } else if (e.key === 'x' && allSelectedIds.length > 0 && activePageId) {
+          } else if (key === 'x' && allSelectedIds.length > 0 && activePageId) {
             cutWidgets(activePageId, allSelectedIds);
             e.preventDefault();
-          } else if (e.key === 'v' && activePageId) {
+          } else if (key === 'v' && activePageId) {
             pasteWidgets(activePageId);
             e.preventDefault();
           }
@@ -191,7 +208,7 @@ export default function Canvas(): React.JSX.Element {
         height: pageHeight * scale,
         transform: 'translate(-50%, -50%)',
       }}>
-        <div style={{
+        <div ref={pageRef} style={{
           width: pageWidth,
           height: pageHeight,
           transform: `scale(${scale})`,
@@ -232,11 +249,13 @@ export default function Canvas(): React.JSX.Element {
           }}
           onClick={(e) => { if (justMarqueed.current) { e.stopPropagation(); justMarqueed.current = false; } }}
         >
-          {/* Cross grid */}
+          {/* Cross grid — a cross every 3 snap steps, centred exactly on the
+              snap points (0, 24, 48 …) so a snapped edge sits on them. */}
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none',
-            backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><line x1="12" y1="9" x2="12" y2="15" stroke="#1d1d1d" stroke-width="1"/><line x1="9" y1="12" x2="15" y2="12" stroke="#1d1d1d" stroke-width="1"/></svg>')}")`,
+            backgroundImage: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect x="11" y="8" width="2" height="8" fill="#262626"/><rect x="8" y="11" width="8" height="2" fill="#262626"/></svg>')}")`,
             backgroundSize: '24px 24px',
+            backgroundPosition: '-12px -12px',
           }} />
 
           {page?.widgets
@@ -339,15 +358,19 @@ export default function Canvas(): React.JSX.Element {
                         liveIds.forEach((id) => {
                           const startPos = multiDragStartPositions.current[id];
                           if (startPos) {
+                            const r = page?.widgets.find((w) => w.id === id)?.rect;
                             updateWidgetRect(activePageId, id, {
-                              x: Math.max(0, startPos.x + dx),
-                              y: Math.max(0, startPos.y + dy),
+                              x: snapIn(startPos.x + dx, r?.width ?? 0, pageWidth),
+                              y: snapIn(startPos.y + dy, r?.height ?? 0, pageHeight),
                             });
                           }
                         });
                       }
                     } else {
-                      updateWidgetRect(activePageId, widget.id, { x: d.x, y: d.y });
+                      updateWidgetRect(activePageId, widget.id, {
+                        x: snapIn(d.x, widget.rect.width, pageWidth),
+                        y: snapIn(d.y, widget.rect.height, pageHeight),
+                      });
                     }
                   }}
                   onResizeStop={(_e, _dir, ref, _delta, pos) => {
@@ -359,19 +382,24 @@ export default function Canvas(): React.JSX.Element {
                       const rx = ref.offsetWidth  / grp.base.w;
                       const ry = ref.offsetHeight / grp.base.h;
                       for (const [id, r] of Object.entries(grp.rects)) {
+                        const width  = Math.max(GRID_SNAP_PX * 5, snap(r.width  * rx));
+                        const height = Math.max(GRID_SNAP_PX * 4, snap(r.height * ry));
                         updateWidgetRect(activePageId, id, {
-                          x: Math.max(0, Math.round(grp.origin.x + (r.x - grp.origin.x) * rx)),
-                          y: Math.max(0, Math.round(grp.origin.y + (r.y - grp.origin.y) * ry)),
-                          width:  Math.max(40, Math.round(r.width  * rx)),
-                          height: Math.max(30, Math.round(r.height * ry)),
+                          x: snapIn(grp.origin.x + (r.x - grp.origin.x) * rx, width, pageWidth),
+                          y: snapIn(grp.origin.y + (r.y - grp.origin.y) * ry, height, pageHeight),
+                          width, height,
                         });
                       }
                       multiResizeStart.current = null;
                     } else {
+                      // Snap both edges, so a widget resized from its left or top
+                      // keeps its far edge where it was.
+                      const x0 = snap(pos.x), y0 = snap(pos.y);
+                      const x1 = snap(pos.x + ref.offsetWidth), y1 = snap(pos.y + ref.offsetHeight);
                       updateWidgetRect(activePageId, widget.id, {
-                        x: pos.x, y: pos.y,
-                        width: ref.offsetWidth,
-                        height: ref.offsetHeight,
+                        x: x0, y: y0,
+                        width:  Math.min(pageWidth - x0, Math.max(80, x1 - x0)),
+                        height: Math.min(pageHeight - y0, Math.max(60, y1 - y0)),
                       });
                     }
                   }}
@@ -379,7 +407,7 @@ export default function Canvas(): React.JSX.Element {
                     outline: isSingleSelected
                       ? '2px solid var(--color-accent)'
                       : isMultiSelected
-                        ? '2px solid #64c8ff'
+                        ? `2px solid ${pal('#91ced2')}`
                         : '1px solid rgba(255,255,255,0.5)',
                     borderRadius: widget.style.borderRadius,
                   }}
@@ -432,13 +460,13 @@ export default function Canvas(): React.JSX.Element {
                           setEditingWidgetId(widget.id);
                         }}
                       >
-                        ✏ Cells
+                        ✏ Edit
                       </button>
                     )}
                     {isMultiSelected && (
                       <div style={{
                         position: 'absolute', inset: 0,
-                        background: 'rgba(100,200,255,0.05)',
+                        background: `rgba(${palRgb('#91ced2')},0.05)`,
                         pointerEvents: 'none',
                       }} />
                     )}
@@ -462,7 +490,7 @@ export default function Canvas(): React.JSX.Element {
           {marquee && (
             <div style={{
               position: 'absolute', left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h,
-              border: `${1 / scale}px solid #64c8ff`, background: 'rgba(100,200,255,0.12)',
+              border: `${1 / scale}px solid ${pal('#91ced2')}`, background: `rgba(${palRgb('#91ced2')},0.12)`,
               pointerEvents: 'none', zIndex: 998,
             }} />
           )}
@@ -472,7 +500,7 @@ export default function Canvas(): React.JSX.Element {
       <div style={styles.scaleHint}>
         {pageWidth}×{pageHeight} — {Math.round(scale * 100)}%
         {selectedWidgetIds.length > 1 && (
-          <span style={{ marginLeft: 8, color: '#64c8ff' }}>{selectedWidgetIds.length} selected</span>
+          <span style={{ marginLeft: 8, color: pal('#91ced2') }}>{selectedWidgetIds.length} selected</span>
         )}
       </div>
 
@@ -507,6 +535,7 @@ export default function Canvas(): React.JSX.Element {
       )}
 
       {isWidgetPickerOpen && <WidgetPicker />}
+      <PlacementLayer pageRef={pageRef} scale={scale} />
       {editingWidgetId && activePageId && (
         <CellEditModal
           widgetId={editingWidgetId}
@@ -522,15 +551,15 @@ const LONG_PRESS_MS = 2000;
 // How far a finger may drift before the hold counts as a drag instead.
 const LONG_PRESS_SLOP = 12;
 
-const styles: Record<string, React.CSSProperties> = {
+const make_styles = (): Record<string, React.CSSProperties> => ({
   outer: {
     flex: 1, position: 'relative', overflow: 'hidden', outline: 'none',
     background: 'var(--color-bg)',
   },
   menuDelete: {
     width: '100%', minHeight: 44, marginBottom: 6,
-    background: '#3a1a1a', color: '#ff6b6b',
-    border: '1px solid #cc3333', borderRadius: 4,
+    background: pal('#3a291a'), color: pal('#ffb06b'),
+    border: `1px solid ${pal('#d97a26')}`, borderRadius: 4,
     fontSize: 14, fontWeight: 600, cursor: 'pointer',
   },
   menuCancel: {
@@ -555,7 +584,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10, color: 'var(--color-text-dim)',
     pointerEvents: 'none',
   },
-};
+});
+let styles: Record<string, React.CSSProperties> = make_styles();
+onPalette(() => { styles = make_styles(); });
 
 // ─── Group resize box ─────────────────────────────────────────────────────────
 // A selection bounding box with corner handles. Dragging a handle scales EVERY
@@ -642,7 +673,7 @@ function GroupResizeBox({ widgets, scale, activePageId, pageW, pageH }: {
   return (
     <div style={{
       position: 'absolute', left: minX, top: minY, width: bw, height: bh,
-      border: `${bw2}px dashed #64c8ff`, boxSizing: 'border-box',
+      border: `${bw2}px dashed ${pal('#91ced2')}`, boxSizing: 'border-box',
       pointerEvents: 'none', zIndex: 999,
     }}>
       {corners.map((h) => (
@@ -656,7 +687,7 @@ function GroupResizeBox({ widgets, scale, activePageId, pageW, pageH }: {
           style={{
             position: 'absolute', left: h.left, top: h.top,
             width: hs, height: hs, marginLeft: -hs / 2, marginTop: -hs / 2,
-            background: '#64c8ff', border: `${bw2}px solid #fff`, borderRadius: 2,
+            background: pal('#91ced2'), border: `${bw2}px solid #fff`, borderRadius: 2,
             cursor: h.cursor, pointerEvents: 'auto', zIndex: 1000,
           }}
         />

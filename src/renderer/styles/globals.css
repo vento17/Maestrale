@@ -8,8 +8,12 @@
   --color-bg:           #000000;
   --color-surface:      #050505;
   --color-surface-2:    #0d0d0d;
-  --color-accent:       #ffffff;
-  --color-accent-dim:   #1a1a1a;
+  --color-accent:       #4fb3b8;   /* laguna */
+  --color-accent-dim:   #12292b;
+  --lf-aqua:            #4fb3b8;
+  --lf-aqua-bright:     #8fd3d6;
+  --lf-orange:          #ff8a1f;
+  --lf-orange-hot:      #ff7700;
   --color-text:         #e8e8e8;
   --color-text-dim:     #888888;
   --color-border:       #252525;
@@ -54,18 +58,18 @@ body {
    the one waiting for a control pulses. Driven by classes so no widget has to
    thread learn state through its own render. */
 body.lf-learn [data-lf-cell] {
-  outline: 1px dashed rgba(255, 140, 0, 0.55);
+  outline: 1px dashed rgba(255,119,0, 0.55);
   outline-offset: -1px;
   cursor: crosshair !important;
 }
 body.lf-learn [data-lf-cell][data-lf-armed] {
-  outline: 2px solid #ff8c00;
+  outline: 2px solid var(--lf-orange-hot);
   outline-offset: -2px;
   animation: lf-learn-pulse 0.9s ease-in-out infinite;
 }
 @keyframes lf-learn-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 140, 0, 0.55); }
-  50%      { box-shadow: 0 0 0 5px rgba(255, 140, 0, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,119,0, 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgba(255,119,0, 0); }
 }
 
 /* XY pad learn strips — inert and invisible until learn mode is on. */
@@ -74,8 +78,8 @@ body.lf-learn .lf-learn-zone {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 140, 0, 0.12);
-  color: #ff8c00;
+  background: rgba(255,119,0, 0.12);
+  color: var(--lf-orange-hot);
   font: 700 12px/1 monospace;
   letter-spacing: 0.15em;
   z-index: 5;
@@ -138,3 +142,15 @@ body.lf-learn .lf-learn-zone {
   border: 2px solid #0a0a0a;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
+
+/* Native controls in the palette (no system blue). */
+input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--lf-aqua); }
+
+/* Shift patching: hide the widgets' own text so dots and cables read clearly. */
+body.lf-patching [data-lf-patch],
+body.lf-patching [data-lf-patch] * {
+  color: transparent !important;
+  text-shadow: none !important;
+}
+body.lf-patching [data-lf-patch] svg text { fill: transparent !important; }
+body.lf-patching [data-lf-patch] input::placeholder { color: transparent !important; }

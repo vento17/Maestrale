@@ -1,3 +1,4 @@
+import { pal, palRgb } from '../../palette';
 import React from 'react';
 import type { SubmastersWidget } from '../../../shared/types/project';
 
@@ -71,11 +72,11 @@ export default function SubmastersDesign({ widget }: { widget: SubmastersWidget 
         display: 'flex', flexDirection: 'column', gap: spacingY,
       }}>
         <div style={{
-          flex: 1, background: 'rgba(200,30,30,0.25)',
+          flex: 1, background: `rgba(${palRgb('#c86d1e')},0.25)`,
           borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: '1px solid #441111',
+          border: `1px solid ${pal('#402915')}`,
         }}>
-          <span style={{ fontSize: 9, color: '#cc3333', fontWeight: 700, letterSpacing: 1 }}>REC</span>
+          <span style={{ fontSize: 9, color: pal('#d97a26'), fontWeight: 700, letterSpacing: 1 }}>REC</span>
         </div>
         <div style={{
           flex: 1, background: 'rgba(255,255,255,0.05)',

@@ -80,8 +80,13 @@ function createWindow(): void {
     },
   });
 
+  // Opens full screen (a show tool lives on the whole display). F11 toggles.
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show();
+    mainWindow!.setFullScreen(true);
+  });
+  mainWindow.webContents.on('before-input-event', (_e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11' && mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
   });
 
   // Renderer is up: hand it whatever the sidecar said while it was booting.

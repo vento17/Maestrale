@@ -1,3 +1,4 @@
+import { pal } from '../../palette';
 import React from 'react';
 import { useStore } from '../../store';
 
@@ -40,7 +41,7 @@ export default function ProtocolLearnMenu({ x, y, widgetId, cellIndex, onClose }
       onPointerDown={(e) => e.stopPropagation()}
     >
       {isLearning ? (
-        <button style={itemStyle('#ff6600')} onClick={cancel}>
+        <button style={itemStyle(pal('#ff7700'))} onClick={cancel}>
           ⬤ Cancel Learn ({target?.protocol?.toUpperCase() ?? 'MIDI'})
         </button>
       ) : (

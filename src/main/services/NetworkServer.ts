@@ -53,7 +53,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:no
 .tab{flex-shrink:0;padding:0 12px;height:30px;display:flex;align-items:center;font-size:11px;color:#666;cursor:pointer;border-right:1px solid #1c1c1c;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;-webkit-user-select:none;user-select:none;}
 .tab.active{color:#ddd;background:#222;}
 #status{position:fixed;top:10px;right:8px;width:6px;height:6px;border-radius:50%;background:#333;z-index:51;pointer-events:none;}
-#status.ok{background:#0c6;}
+#status.ok{background:#3b8b91;}
 #lf-frame{position:absolute;display:block;image-rendering:auto;}
 #interact{position:fixed;top:0;left:0;right:0;bottom:0;touch-action:none;cursor:crosshair;}
 #loading{position:fixed;top:0;left:0;right:0;bottom:0;background:#000;display:flex;align-items:center;justify-content:center;font-size:13px;color:#444;letter-spacing:2px;text-transform:uppercase;font-family:monospace;z-index:10;}

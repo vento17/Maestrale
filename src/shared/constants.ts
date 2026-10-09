@@ -37,8 +37,14 @@ export const DEFAULT_LFO_RECT            = { x: 0, y: 0, width: 240, height: 180
 export const DEFAULT_MATH_RECT           = { x: 0, y: 0, width: 260, height: 200 };
 export const DEFAULT_VALUE_DISPLAY_RECT  = { x: 0, y: 0, width: 200, height: 120 };
 export const DEFAULT_MASTER_LEVEL_RECT   = { x: 0, y: 0, width: 130, height: 340 };
+export const DEFAULT_SKETCH_RECT         = { x: 0, y: 0, width: 420, height: 320 };
+export const DEFAULT_AUDIO_LEVEL_RECT    = { x: 0, y: 0, width: 130, height: 340 };
 export const DEFAULT_INSTANCE_RECT       = { x: 0, y: 0, width: 200, height: 200 };
 export const DEFAULT_KEYBOARD_RECT       = { x: 0, y: 0, width: 420, height: 180 };
+export const DEFAULT_DMX_RECORDER_RECT   = { x: 0, y: 0, width: 260, height: 170 };
+export const DEFAULT_DMX_PLAYER_RECT     = { x: 0, y: 0, width: 360, height: 170 };
+export const DEFAULT_CLOCK_RECT          = { x: 0, y: 0, width: 420, height: 260 };
+export const DEFAULT_DMX_MONITOR_RECT    = { x: 0, y: 0, width: 480, height: 980 };
 // Big by default — it carries two rows of tabs and a body of text.
 export const DEFAULT_MANUAL_RECT         = { x: 0, y: 0, width: 900, height: 560 };
 

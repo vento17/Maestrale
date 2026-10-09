@@ -1,0 +1,28 @@
+0.3.0 — router page, shift patching, Art-Net/sACN input, DMX record/play, new widgets
+
+- Router page: every link in one sortable, searchable table; in/out ranges in real units
+- Shift patching: drag cables between outputs and inputs, double-click to unlink
+- Art-Net input with ArtPoll reply; sACN (E1.31) input with multicast and priority
+- Timeline GO / STOP / BACK as remote inputs; colour track as RGB, RGBW or split OSC
+- DMX Recorder (Art-Net or sACN) and DMX Player playlist with fades, end modes,
+  first/prev/stop/next inputs; recording folders chosen in Settings
+- Sound Player playlist with per-track end mode and fade
+- New widgets: Clock, DMX Monitor, Noise, Sketch, Audio Level
+- LFO with TouchDesigner-style inputs (play, freq, amp, offset, bias, phase, reset)
+- XY Pad with several dots; Step Sequencer and Graph with play/speed/reset inputs
+- Widget picker in columns with search; manual full screen with text size
+- DMX Recorder can also record LiveForge's own output (Art-Net, sACN, Open DMX)
+- New palette: black/grey/white + laguna aqua + fire orange
+- Top bar: Router · Log | protocol badges; log opens under the bar, red on errors
+- Shift patching hides widget text; X/Y dots grouped in pairs
+- Installations: reopens the last saved project at start, no questions;
+  "Open in Live mode at startup" project option; New button
+- Ctrl+S save (asks name and place the first time), Ctrl+Shift+S save as
+- Settings > Palette: pick the two interface colours, reset to default
+- Grid: positions and sizes snap to one absolute 8 px grid, edges line up
+- New widgets send OSC by default (/s1/1, /b1/1, /xy1/x, /lfo1 ...)
+- Noise seed; DMX Monitor defaults to the whole universe (16 x 32)
+- Copy/paste/undo shortcuts work with Caps Lock on
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ETGEwquYRdYkhw21SvwUKf

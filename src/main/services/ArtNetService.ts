@@ -43,6 +43,36 @@ export class ArtNetService {
     this.startFlushLoop();
   }
 
+  // Local UDP port the sender is bound to (null until configured). The Art-Net
+  // receiver uses it to drop our own broadcast when it loops back.
+  localPort(): number | null {
+    try { return this.socket ? this.socket.address().port : null; } catch { return null; }
+  }
+
+  // Every universe any output has touched — the DMX recorder samples these
+  // when it records LiveForge's own output.
+  universesInUse(): number[] {
+    const set = new Set<number>();
+    for (const o of this.outputs.values()) for (const u of o.universes.keys()) set.add(u);
+    return [...set].sort((a, b) => a - b);
+  }
+
+  // What this service is currently putting out on a universe, for the DMX
+  // monitor: every output merged highest-takes-precedence (index 0 = ch 1).
+  snapshot(universe: number, outputId?: string): Uint8Array {
+    const out = new Uint8Array(512);
+    const seen = new Set<Output>();
+    const only = outputId ? this.outputs.get(outputId) : undefined;
+    for (const o of (only ? [only] : this.outputs.values())) {
+      if (seen.has(o)) continue;
+      seen.add(o);
+      const m = o.universes.get(universe);
+      if (!m) continue;
+      for (const [ch, v] of m) if (ch >= 1 && ch <= 512 && v > out[ch - 1]) out[ch - 1] = v;
+    }
+    return out;
+  }
+
   private resolve(outputId: string | undefined): Output | undefined {
     return this.outputs.get(outputId ?? PRIMARY) ?? this.outputs.get(PRIMARY);
   }

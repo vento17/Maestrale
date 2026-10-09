@@ -1,3 +1,4 @@
+import { pal, palRgb } from '../../palette';
 import React, { useRef, useEffect, useState } from 'react';
 import type { KnobBankWidget } from '../../../shared/types/project';
 import { useStore, useWidgetRuntime } from '../../store';
@@ -98,11 +99,11 @@ export default function KnobBankLive({ widget }: { widget: KnobBankWidget }): Re
               alignItems: 'center', justifyContent: 'center',
               gap: 4, cursor: 'ns-resize', touchAction: 'none',
               borderRadius: 4,
-              outline: isLearnTarget ? '2px solid #ff6600'
-                : isDragOver ? '2px solid #64c8ff'
+              outline: isLearnTarget ? `2px solid ${pal('#ff7700')}`
+                : isDragOver ? `2px solid ${pal('#91ced2')}`
                 : isSlave ? SLAVE_OUTLINE
                 : undefined,
-              background: isDragOver ? 'rgba(100,200,255,0.1)' : undefined,
+              background: isDragOver ? `rgba(${palRgb('#91ced2')},0.1)` : undefined,
             }}
             onPointerDown={(e) => {
               // A router link is a second way in, not a lock.
@@ -178,7 +179,7 @@ export default function KnobBankLive({ widget }: { widget: KnobBankWidget }): Re
             )}
             {isLearnTarget && (
               <div style={{
-                position: 'absolute', inset: 0, background: 'rgba(255,102,0,0.12)',
+                position: 'absolute', inset: 0, background: `rgba(${palRgb('#ff7700')},0.12)`,
                 zIndex: 3, pointerEvents: 'none', borderRadius: 4,
               }} />
             )}

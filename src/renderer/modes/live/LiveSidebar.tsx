@@ -1,3 +1,4 @@
+import { pal, palRgb } from '../../palette';
 import React from 'react';
 import { useStore, useActivePage } from '../../store';
 import type {
@@ -36,7 +37,7 @@ function SliderRow({ label, value, min, max, step, fmt, onChange }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <input
           type="range" min={min} max={max} step={step ?? 0.01} value={value}
-          style={{ flex: 1, cursor: 'pointer', accentColor: 'var(--color-accent, #646cff)' }}
+          style={{ flex: 1, cursor: 'pointer', accentColor: `var(--color-accent, ${pal('#91ced2')})` }}
           onChange={(e) => onChange(parseFloat(e.target.value))}
         />
         <span style={{ fontSize: 10, color: '#666', fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
@@ -79,9 +80,9 @@ function ButtonGroupRow({ label, options, value, onChange }: {
             key={opt}
             style={{
               flex: 1, padding: '4px 0', fontSize: 11, cursor: 'pointer',
-              border: `1px solid ${value === opt ? 'var(--color-accent, #646cff)' : '#2a2a2a'}`,
-              background: value === opt ? 'rgba(100,108,255,0.18)' : '#111',
-              color: value === opt ? 'var(--color-accent, #646cff)' : '#555',
+              border: `1px solid ${value === opt ? `var(--color-accent, ${pal('#91ced2')})` : '#2a2a2a'}`,
+              background: value === opt ? `rgba(${palRgb('#91ced2')},0.18)` : '#111',
+              color: value === opt ? `var(--color-accent, ${pal('#91ced2')})` : '#555',
               borderRadius: 3,
             }}
             onClick={() => onChange(opt)}
@@ -98,13 +99,13 @@ function ButtonGroupRow({ label, options, value, onChange }: {
 
 function LfoParams({ w, update }: { w: LfoWidget; update: UpdateFn }): React.JSX.Element {
   const waveformLabels: Record<LfoWaveform, string> = {
-    sine: 'SIN', square: 'SQR', saw: 'SAW', triangle: 'TRI', random: 'RND',
+    sine: 'SIN', square: 'SQR', saw: 'SAW', triangle: 'TRI', random: 'RND', noise: 'NOISE',
   };
   return (
     <>
       <ButtonGroupRow
         label="Waveform"
-        options={(['sine', 'square', 'saw', 'triangle', 'random'] as LfoWaveform[]).map((wf) => waveformLabels[wf])}
+        options={(['sine', 'square', 'saw', 'triangle', 'random', 'noise'] as LfoWaveform[]).map((wf) => waveformLabels[wf])}
         value={waveformLabels[w.waveform]}
         onChange={(v) => {
           const wf = Object.entries(waveformLabels).find(([, label]) => label === v)?.[0] as LfoWaveform;
@@ -393,6 +394,7 @@ function ParamPanel({ widget, update, onEditCells }: {
     case 'buttonGrid':
     case 'knobBank':
       return <CellBankParams w={widget as SliderBankWidget | ButtonGridWidget | KnobBankWidget} onEditCells={onEditCells} />;
+    case 'noiseWidget':
     case 'lfoWidget':     return <LfoParams w={widget as LfoWidget} update={update} />;
     case 'mathWidget':    return <MathParams w={widget as MathWidget} update={update} />;
     case 'valueDisplay':  return <ValueDisplayParams w={widget as ValueDisplayWidget} update={update} />;

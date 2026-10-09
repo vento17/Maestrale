@@ -1,10 +1,11 @@
+import { pal } from '../../palette';
 import React, { useState, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import {
-  findSlaveLink, listLinkableSources, sourceCells, listRouters, pageIdOfWidget,
-  cellLabel,
+  findSlaveLink, listLinkableSources, sourceCells, pageIdOfWidget,
 } from './links';
-import { createRouterOn } from './createRouter';
+import { MAIN_ROUTER_ID } from './routers';
 
 interface Props {
   x: number;
@@ -14,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-type View = 'root' | 'sources' | 'cells' | 'routers' | 'learnRouters';
+type View = 'root' | 'sources' | 'cells';
 
 
 
@@ -27,64 +28,25 @@ export default function CellLinkMenu({ x, y, widgetId, cellIndex, onClose }: Pro
   const hasMidi = !!connectedProtocols['midiInput'] || !!connectedProtocols['midi'] ||
                   connections.some((c) => c.type === 'midiInput' || c.type === 'midi');
   const hasOsc  = !!connectedProtocols['osc'] || connections.some((c) => c.type === 'osc');
+  const hasArtnetIn = connections.some((c) => c.type === 'artnetInput' && c.enabled);
+  const hasSacnIn = connections.some((c) => c.type === 'sacnInput' && c.enabled);
 
   const learnTarget = useStore((s) => s.midiLearnTarget);
   const isLearning = learnTarget?.widgetId === widgetId && learnTarget?.cellIndex === cellIndex;
 
   const [view, setView] = useState<View>('root');
   const [srcWidgetId, setSrcWidgetId] = useState<string>('');
-  const [srcCellIndex, setSrcCellIndex] = useState<number>(0);
 
   const slaveLink = findSlaveLink(project, widgetId, cellIndex);
-  const routers = listRouters(project);
   const srcWidget = project.pages.flatMap((p) => p.widgets).find((w) => w.id === srcWidgetId);
 
-  // Which router the learned row will go into is decided BEFORE listening, so
-  // the bind is never a surprise — same choice the manual link path asks for.
-  const [learnProtocol, setLearnProtocol] = useState<'midi' | 'osc'>('midi');
 
-  const startLearn = (routerId: string): void => {
+  // Every link lives in the main router now: Learn arms straight away.
+  const askLearnRouter = (protocol: 'midi' | 'osc' | 'artnet' | 'sacn'): void => {
     const pageId = pageIdOfWidget(useStore.getState().project, widgetId)
                 ?? useStore.getState().activePageId;
     if (!pageId) { onClose(); return; }
-    useStore.getState().setMidiLearnTarget({
-      pageId, widgetId, cellIndex, protocol: learnProtocol, routerId,
-    });
-    onClose();
-  };
-
-  const startLearnNewRouter = (): void => {
-    const store = useStore.getState();
-    const pageId = pageIdOfWidget(store.project, widgetId) ?? store.activePageId;
-    if (!pageId) { onClose(); return; }
-    startLearn(createRouterOn(pageId));
-  };
-
-  const askLearnRouter = (protocol: 'midi' | 'osc'): void => {
-    setLearnProtocol(protocol);
-    setView('learnRouters');
-  };
-
-  const commitLink = (routerId: string): void => {
-    useStore.getState().linkSlaveCell({
-      slaveWidgetId: widgetId, slaveCellIndex: cellIndex,
-      sourceWidgetId: srcWidgetId, sourceCellIndex: srcCellIndex,
-      routerId,
-    });
-    onClose();
-  };
-
-  const commitLinkNewRouter = (): void => {
-    const store = useStore.getState();
-    const slavePageId = pageIdOfWidget(store.project, widgetId) ?? store.activePageId;
-    if (!slavePageId) { onClose(); return; }
-    const routerId = createRouterOn(slavePageId);
-
-    store.linkSlaveCell({
-      slaveWidgetId: widgetId, slaveCellIndex: cellIndex,
-      sourceWidgetId: srcWidgetId, sourceCellIndex: srcCellIndex,
-      routerId,
-    });
+    useStore.getState().setMidiLearnTarget({ pageId, widgetId, cellIndex, protocol, routerId: MAIN_ROUTER_ID });
     onClose();
   };
 
@@ -94,8 +56,12 @@ export default function CellLinkMenu({ x, y, widgetId, cellIndex, onClose }: Pro
   };
 
   const goPickRouter = (idx: number): void => {
-    setSrcCellIndex(idx);
-    setView('routers');
+    useStore.getState().linkSlaveCell({
+      slaveWidgetId: widgetId, slaveCellIndex: cellIndex,
+      sourceWidgetId: srcWidgetId, sourceCellIndex: idx,
+      routerId: MAIN_ROUTER_ID,
+    });
+    onClose();
   };
 
   // The menu is big enough now that opening it near an edge would push it off
@@ -114,7 +80,12 @@ export default function CellLinkMenu({ x, y, widgetId, cellIndex, onClose }: Pro
     });
   }, [x, y, view]);
 
-  return (
+  // Portal to <body>: the menu is opened from inside a widget, and every Live
+  // page sits in a transform: scale() box inside an overflow: hidden canvas. A
+  // transformed ancestor turns position: fixed into position-relative-to-it, so
+  // the menu landed offset by the canvas origin and was clipped at the canvas
+  // edge — the tail of the source list (other pages' widgets) was unreachable.
+  return createPortal(
     <div
       ref={menuRef}
       style={{
@@ -131,11 +102,11 @@ export default function CellLinkMenu({ x, y, widgetId, cellIndex, onClose }: Pro
           {slaveLink ? (
             <>
               <div style={headerStyle}>
-                ▶ slaved to <span style={{ color: '#ff5555' }}>{slaveLink.source.primary}</span>
+                ▶ slaved to <span style={{ color: pal('#ffa455') }}>{slaveLink.source.primary}</span>
                 <span style={{ color: '#777' }}> · {slaveLink.source.secondary}</span>
               </div>
               <div style={dividerStyle} />
-              <button style={itemStyle('#ff6666')} onClick={() => { useStore.getState().unlinkSlaveCell(widgetId, cellIndex); onClose(); }}>
+              <button style={itemStyle(pal('#ffad66'))} onClick={() => { useStore.getState().unlinkSlaveCell(widgetId, cellIndex); onClose(); }}>
                 ✕ Unlink
               </button>
               <button style={itemStyle()} onClick={() => setView('sources')}>
@@ -148,18 +119,20 @@ export default function CellLinkMenu({ x, y, widgetId, cellIndex, onClose }: Pro
             </button>
           )}
 
-          {(hasMidi || hasOsc) && <div style={dividerStyle} />}
+          {(hasMidi || hasOsc || hasArtnetIn || hasSacnIn) && <div style={dividerStyle} />}
           {isLearning ? (
-            <button style={itemStyle('#ff6600')} onClick={() => { useStore.getState().setMidiLearnTarget(null); onClose(); }}>
+            <button style={itemStyle(pal('#ff7700'))} onClick={() => { useStore.getState().setMidiLearnTarget(null); onClose(); }}>
               ⬤ Cancel Learn ({learnTarget?.protocol?.toUpperCase() ?? 'MIDI'})
             </button>
           ) : (
             <>
               {hasMidi && <button style={itemStyle()} onClick={() => askLearnRouter('midi')}>⬤ Learn MIDI CC ▸</button>}
               {hasOsc  && <button style={itemStyle()} onClick={() => askLearnRouter('osc')}>⬤ Learn OSC ▸</button>}
-              {!hasMidi && !hasOsc && (
+              {hasArtnetIn && <button style={itemStyle()} onClick={() => askLearnRouter('artnet')}>⬤ Learn Art-Net ▸</button>}
+              {hasSacnIn && <button style={itemStyle()} onClick={() => askLearnRouter('sacn')}>⬤ Learn sACN ▸</button>}
+              {!hasMidi && !hasOsc && !hasArtnetIn && !hasSacnIn && (
                 <div style={emptyStyle}>
-                  no MIDI/OSC connection — add one in Settings
+                  no MIDI/OSC/Art-Net input — add one in Settings
                 </div>
               )}
             </>
@@ -209,46 +182,9 @@ export default function CellLinkMenu({ x, y, widgetId, cellIndex, onClose }: Pro
         </>
       )}
 
-      {view === 'learnRouters' && (
-        <>
-          <button style={backStyle} onClick={() => setView('root')}>
-            ‹ Learn {learnProtocol.toUpperCase()}
-          </button>
-          <div style={dividerStyle} />
-          <div style={headerStyle}>put the learned row in</div>
-          {routers.map((r) => (
-            <button key={r.id} style={itemStyle()} onClick={() => startLearn(r.id)}>
-              {r.label}
-              {project.pages.length > 1 && <span style={{ color: '#666' }}> · {r.pageName}</span>}
-            </button>
-          ))}
-          <div style={dividerStyle} />
-          <button style={itemStyle('#66cc99')} onClick={startLearnNewRouter}>
-            ＋ New router
-          </button>
-        </>
-      )}
 
-      {view === 'routers' && (
-        <>
-          <button style={backStyle} onClick={() => setView('cells')}>
-            ‹ {srcWidget?.label} · {cellLabel(srcWidget, srcCellIndex)}
-          </button>
-          <div style={dividerStyle} />
-          <div style={headerStyle}>create link in</div>
-          {routers.map((r) => (
-            <button key={r.id} style={itemStyle()} onClick={() => commitLink(r.id)}>
-              {r.label}
-              {project.pages.length > 1 && <span style={{ color: '#666' }}> · {r.pageName}</span>}
-            </button>
-          ))}
-          <div style={dividerStyle} />
-          <button style={itemStyle('#66cc99')} onClick={commitLinkNewRouter}>
-            ＋ New router
-          </button>
-        </>
-      )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

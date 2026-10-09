@@ -1,3 +1,4 @@
+import { pal } from '../palette';
 import React from 'react';
 import { useStore } from '../store';
 import { bridge } from '../ipc/bridge';
@@ -45,7 +46,7 @@ export default class CrashScreen extends React.Component<{ children: React.React
         background: 'var(--color-bg, #0d0d0d)', padding: 24, boxSizing: 'border-box',
       }}>
         <div style={{ maxWidth: 640 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#ff6666', marginBottom: 10 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: pal('#ffad66'), marginBottom: 10 }}>
             Something broke on this screen
           </div>
           <div style={{ fontSize: 14, color: '#b0b0b0', lineHeight: 1.55, marginBottom: 14 }}>
@@ -54,12 +55,12 @@ export default class CrashScreen extends React.Component<{ children: React.React
           </div>
           <pre style={{
             background: '#141414', border: '1px solid #2a2a2a', borderRadius: 5,
-            padding: '10px 12px', fontSize: 12, color: '#cc8888',
+            padding: '10px 12px', fontSize: 12, color: pal('#e6a66f'),
             whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 18px',
           }}>{error.message}</pre>
           <div style={{ display: 'flex', gap: 10 }}>
             <button
-              style={{ ...btn, background: 'var(--color-accent, #646cff)', border: '1px solid var(--color-accent, #646cff)', color: '#000', fontWeight: 700 }}
+              style={{ ...btn, background: `var(--color-accent, ${pal('#91ced2')})`, border: `1px solid var(--color-accent, ${pal('#91ced2')})`, color: '#000', fontWeight: 700 }}
               onClick={() => { bridge.invoke('tr:project:save', useStore.getState().project).catch(() => {}); }}
             >
               Save project

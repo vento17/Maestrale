@@ -1,12 +1,15 @@
+import { xyMapping } from '../../../shared/types/project';
 import React, { useState, useRef, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { nanoid } from 'nanoid';
-import type { Widget, CuesWidget, CueData, SliderBankWidget, KnobBankWidget, ButtonGridWidget, XYPadWidget, RouterWidget, RouterRow } from '../../../shared/types/project';
+import type { Widget, CuesWidget, CueData, SliderBankWidget, KnobBankWidget, ButtonGridWidget, XYPadWidget, RouterRow } from '../../../shared/types/project';
 import type { OscMapping, MidiMapping } from '../../../shared/types/mapping';
 import { useStore } from '../../store';
 import { dispatchValue, dispatchButton } from '../../ipc/dispatch';
 import { bridge } from '../../ipc/bridge';
 import { cellCount } from '../utils';
 import CellLinkMenu from '../base/CellLinkMenu';
+import { eachRouter } from '../base/routers';
 import { useSlavedCells, SLAVE_OUTLINE } from '../base/useSlavedCells';
 import NumberInput from '../base/NumberInput';
 import { widgetsInScope } from './scope';
@@ -36,8 +39,7 @@ function dispatchCellValue(widget: Widget, cellIndex: number, value: number): vo
     }
     case 'xyPad': {
       const w = widget as XYPadWidget;
-      if (cellIndex === 0) dispatchValue(w.mappingX, value);
-      else dispatchValue(w.mappingY, value);
+      dispatchValue(xyMapping(w, cellIndex), value);
       break;
     }
     default:
@@ -48,7 +50,7 @@ function dispatchCellValue(widget: Widget, cellIndex: number, value: number): vo
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.Element {
-  const { updateWidget } = useStore((s) => ({ updateWidget: s.updateWidget }));
+  const { updateWidget } = useStore(useShallow((s) => ({ updateWidget: s.updateWidget })));
   const activePageId = useStore((s) => s.activePageId);
 
   const [editingId,   setEditingId]   = useState<string | null>(null);
@@ -96,10 +98,8 @@ export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.
     // Capture link/routing state — every router's rows across all pages, so
     // recalling this cue restores exactly which cells are slaved to what.
     const links: Record<string, RouterRow[]> = {};
-    for (const p of project.pages) {
-      for (const w of p.widgets) {
-        if (w.kind === 'router') links[w.id] = JSON.parse(JSON.stringify((w as RouterWidget).rows)) as RouterRow[];
-      }
+    for (const r of eachRouter(project)) {
+      links[r.id] = JSON.parse(JSON.stringify(r.holder.rows)) as RouterRow[];
     }
     const n = widget.cues.length + 1;
     saveCues([...widget.cues, { id: nanoid(), name: `Cue ${n}`, bgColor: '#1c2a1c', fadeTime: 0, snapshot, play, links }]);
@@ -376,7 +376,7 @@ export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.
                   display: 'flex', alignItems: 'center', gap: 4, height: 38, flexShrink: 0,
                   opacity: dragSrcIdx === i ? 0.4 : 1,
                   outline: slavedCells.has(i) ? SLAVE_OUTLINE : isActive ? '1px solid #ffffff44' : 'none',
-                  outlineOffset: slavedCells.has(i) ? -2 : undefined,
+                  outlineOffset: slavedCells.has(i) ? -1 : undefined,
                   borderRadius: 3, marginBottom: 2,
                 }}
               >

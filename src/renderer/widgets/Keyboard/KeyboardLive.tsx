@@ -156,7 +156,7 @@ export default function KeyboardLive({ widget }: { widget: KeyboardWidget }): Re
                 borderRadius: 4,
                 border: `2px solid ${color}`,
                 outline: isSlave ? SLAVE_OUTLINE : undefined,
-                outlineOffset: isSlave ? -2 : undefined,
+                outlineOffset: isSlave ? -1 : undefined,
                 position: 'relative',
                 display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',

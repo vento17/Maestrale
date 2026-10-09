@@ -1,3 +1,4 @@
+import { pal } from '../../palette';
 import React, { useState, useCallback, useRef } from 'react';
 import type { SpoutInputWidget } from '../../../shared/types/project';
 
@@ -47,7 +48,7 @@ export default function SpoutInputLive({ widget }: { widget: SpoutInputWidget })
     return (
       <div style={overlay}>
         <MonitorIcon />
-        <span style={{ color: '#cc4444' }}>Stream unavailable</span>
+        <span style={{ color: pal('#db8235') }}>Stream unavailable</span>
         <span style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>{widget.senderName}</span>
         <span style={{ fontSize: 9, color: 'var(--color-text-dim)' }}>Is the sidecar running?</span>
       </div>
