@@ -116,7 +116,7 @@ jobs:
           # were hardcoded to v0.1.0, so every later tag dumped its exe and dmgs
           # onto the old release.
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'dev-build' }}
-          name: ${{ github.ref_type == 'tag' && format('Maestrale {0}', …), github.ref_name) || 'Maestrale dev build' }}
+          name: ${{ github.ref_type == 'tag' && format('Maestrale {0}',  github.ref_name) || 'Maestrale dev build' }}
           prerelease: ${{ github.ref_type != 'tag' }}
           files: |
             artifacts/**/*.exe
