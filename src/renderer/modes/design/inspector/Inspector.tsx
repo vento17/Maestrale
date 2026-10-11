@@ -1,5 +1,11 @@
-import { pal, palRgb, getPalette, setPalette, resetPalette, DEFAULT_PALETTE } from '../../../palette';
+import { pal, palRgb, DEFAULT_PALETTE } from '../../../palette';
 import type { Palette } from '../../../palette';
+import EncoderSettings from '../../../widgets/Encoder/EncoderSettings';
+import EtcSettings from '../../../widgets/Etc/EtcSettings';
+import ExcludeList from '../../../widgets/base/ExcludeList';
+import PresetBar from '../../../widgets/base/PresetBar';
+import SketchPresetBar from '../../../widgets/Sketch/SketchPresetBar';
+import { quantLabel } from '../../../widgets/base/paramInputs';
 import { xyMapping } from '../../../../shared/types/project';
 import React, { useState, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -15,6 +21,12 @@ import { ClockAlarms } from '../../../widgets/Clock/ClockLive';
 import { inOptions as monInOptions, outOptions as monOutOptions } from '../../../widgets/DmxMonitor/DmxMonitorLive';
 import { addLane, removeLane } from '../../../widgets/LfoWidget/LfoWidgetLive';
 import { addXYDot, XY_DOT_COLORS } from '../../../widgets/XYPad/XYPadLive';
+import ResizableColumn from '../../ResizableColumn';
+import { widgetEosUser, setWidgetEosUserPatch } from '../../../widgets/base/eosUser';
+import { XY_PRESETS, applyXYPreset, defaultZ } from '../../../widgets/XYPad/xyPresets';
+import { ShellButtonEditor } from '../../../widgets/Shell/ShellLive';
+import { ColorEditor, setPaletteCount } from '../../../widgets/Palette/PaletteLive';
+import { shellAction } from '../../../../shared/shellActions';
 import type { DmxInputStatusPayload } from '../../../../shared/types/ipc';
 import { dispatchValue, dispatchButton } from '../../../ipc/dispatch';
 import {
@@ -25,7 +37,7 @@ import { keyCapLabel, RESERVED_CODES } from '../../../widgets/Keyboard/keyNames'
 import { cellLabel, sourceCells, targetCells, listLinkableSources, computeSlavedCellSet, isLinkSource, SUBMASTER_KINDS, SUBMASTER_ALL, INSTANCE_KINDS } from '../../../widgets/base/links';
 import { pulseParamInput, GEN_SPEEDS } from '../../../widgets/base/paramInputs';
 import NumberInput from '../../../widgets/base/NumberInput';
-import { cueScopePages, cueScopeWidgets, widgetsInScope, CUE_SCOPE_ALL } from '../../../widgets/Cues/scope';
+import { cueScopePages, cueScopeWidgets, CUE_SCOPE_ALL } from '../../../widgets/Cues/scope';
 import { nextFreeCc } from '../../../widgets/defaults';
 import { artnetConfigOutputs, sacnConfigOutputs, oscConfigOutputs, midiConfigOutputs, listOutputs } from '../../../../shared/outputs';
 import type { OutputProtocol } from '../../../../shared/outputs';
@@ -44,7 +56,8 @@ export default function Inspector(): React.JSX.Element {
   const widget = page?.widgets.find((w) => w.id === selectedWidgetId);
 
   return (
-    <div style={styles.panel}>
+    <ResizableColumn base={333}>
+    <div style={{ ...styles.panel, width: '100%', height: '100%', boxSizing: 'border-box' }}>
       {isSettingsOpen
         ? <SettingsPanel />
         : widget && activePageId
@@ -86,6 +99,10 @@ export default function Inspector(): React.JSX.Element {
                                               ? <MasterLevelInspectorPanel widget={widget as import('../../../../shared/types/project').MasterLevelWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'sketch'
                                               ? <SketchInspectorPanel widget={widget as import('../../../../shared/types/project').SketchWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                              : widget.kind === 'etc'
+                                              ? <EtcInspectorPanel widget={widget as import('../../../../shared/types/project').EtcWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                              : widget.kind === 'encoder'
+                                              ? <EncoderInspectorPanel widget={widget as import('../../../../shared/types/project').EncoderWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'audioLevel'
                                               ? <AudioLevelInspectorPanel widget={widget as import('../../../../shared/types/project').AudioLevelWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'instance'
@@ -100,12 +117,19 @@ export default function Inspector(): React.JSX.Element {
                                                   ? <DmxMonitorInspectorPanel widget={widget as import('../../../../shared/types/project').DmxMonitorWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                 : widget.kind === 'clock'
                                                   ? <ClockInspectorPanel widget={widget as import('../../../../shared/types/project').ClockWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'shell'
+                                                  ? <ShellInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'palette'
+                                                  ? <PaletteInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'merge'
+                                                  ? <MergeInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                 : widget.kind === 'manual'
                                                   ? <ManualInspectorPanel widget={widget as import('../../../../shared/types/project').ManualWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                   : <WidgetPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
           : <NoSelectionPanel />
       }
     </div>
+    </ResizableColumn>
   );
 }
 
@@ -214,6 +238,12 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
         </Row>
       </Section>
 
+      {isBankWidget && (
+        <Section label="Preset">
+          <PresetBar w={widget as import('../../../../shared/types/project').SliderBankWidget} pageId={activePageId} />
+        </Section>
+      )}
+
       {bankWidget && (
         <Section label="Grid">
           <Row>
@@ -321,6 +351,7 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
           <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5 }}>
             Changes protocol and resets cell mappings to defaults.
           </div>
+          {widget.outputProtocol === 'osc' && <EosUserRow widget={widget} activePageId={activePageId} />}
           {(() => {
             const proto = widget.outputProtocol as string;
             if (!['midi', 'osc', 'artnet', 'sacn'].includes(proto)) return null;
@@ -458,13 +489,17 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
 // Settings → Palette: the two interface colours, kept on this computer.
 // The whole interface redraws in them; Reset brings back laguna + fire orange.
 function PaletteSection(): React.JSX.Element {
-  const [p, setP] = useState<Palette>(getPalette());
+  const saved = useStore((st) => st.project.palette) ?? DEFAULT_PALETTE;
+  const [p, setP] = useState<Palette>(saved);
+  useEffect(() => { setP(saved); }, [saved.accent, saved.highlight]);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stored in the project; App applies it to the interface.
+  const commit = (next: Palette | undefined) => useStore.setState((st) => ({ project: { ...st.project, palette: next } }));
   const change = (k: keyof Palette, v: string) => {
     const next = { ...p, [k]: v };
     setP(next);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setPalette(next), 250);
+    timer.current = setTimeout(() => commit(next), 250);
   };
   const isDefault = p.accent === DEFAULT_PALETTE.accent && p.highlight === DEFAULT_PALETTE.highlight;
   const row = (k: keyof Palette, label: string, hint: string) => (
@@ -479,12 +514,9 @@ function PaletteSection(): React.JSX.Element {
     <Section label="Palette">
       {row('accent', 'Accent', 'Selections, active states, inputs, Live')}
       {row('highlight', 'Highlight', 'Warnings, outputs, Learn, the second colour')}
-      <ResetBtn onClick={() => { if (timer.current) clearTimeout(timer.current); resetPalette(); }}>
+      <ResetBtn onClick={() => { if (timer.current) clearTimeout(timer.current); setP(DEFAULT_PALETTE); commit(undefined); }}>
         {isDefault ? 'Default palette' : '↺ Reset palette'}
       </ResetBtn>
-      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
-        Saved on this computer, for every project. Colours you set on a single widget stay as they are.
-      </div>
     </Section>
   );
 }
@@ -606,7 +638,6 @@ function CueScopeFields({ widget, patch }: {
   const project = useProject();
   const pageOpts = cueScopePages(project);
   const widgetOpts = cueScopeWidgets(project, widget.scopePageId);
-  const count = widgetsInScope(project, widget.scopePageId, widget.scopeWidgetId).length;
 
   return (
     <Section label="Cue scope">
@@ -623,10 +654,9 @@ function CueScopeFields({ widget, patch }: {
           {widgetOpts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </Field>
-      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', lineHeight: 1.5 }}>
-        Recording a cue captures {count} widget{count !== 1 ? 's' : ''}.
-        Applies to cues you record from now on — ones already saved keep what they hold.
-      </div>
+      <Field label="Exclude">
+        <ExcludeList options={widgetOpts.filter((o) => o.id !== CUE_SCOPE_ALL)} value={widget.excludeIds ?? []} onChange={(ids) => patch({ excludeIds: ids })} />
+      </Field>
     </Section>
   );
 }
@@ -646,8 +676,7 @@ function CuesInspectorPanel({ widget, activePageId, updateWidget }: {
         <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
       </Section>
       <div style={{ fontSize: 12, color: 'var(--color-text-dim)', padding: '8px 12px', lineHeight: 1.5 }}>
-        {widget.cues.length} cue{widget.cues.length !== 1 ? 's' : ''} saved. Manage in Live mode.
-        <br />OSC trigger: /<em>cuename</em>
+        OSC trigger: /<em>cuename</em>
       </div>
       <CueScopeFields widget={widget} patch={patch} />
       <Section label="Navigation mappings">
@@ -1600,6 +1629,11 @@ function XYPadPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
         </Row>
       </Section>
 
+      <Section label="Preset">
+        <XYPresetBar widget={widget} patch={patch} />
+        <EosUserRow widget={widget} activePageId={activePageId} />
+      </Section>
+
       <Section label="X Axis">
         <MappingEditor mapping={widget.mappingX} onChange={(m) => patch({ mappingX: m })} />
       </Section>
@@ -1629,6 +1663,20 @@ function XYPadPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
           </Section>
         );
       })}
+      <Section label="Z slider">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', marginBottom: 6 }}>
+          <input type="checkbox" checked={!!widget.zSlider} onChange={(e) => {
+            const on = e.target.checked;
+            const zCell = 2 * (1 + (widget.points?.length ?? 0));
+            if (!on) useStore.getState().dropCellAndShiftLinks(widget.id, zCell);
+            patch({ zSlider: on, mappingZ: widget.mappingZ ?? defaultZ(widget.mappingX) });
+            if (on) queueMicrotask(() => useStore.getState().setCellValue(widget.id, zCell, 0.5));
+          }} />
+          A slider on the right (camera Z, zoom…), starts in the middle
+        </label>
+        {widget.zSlider && <MappingEditor mapping={widget.mappingZ ?? null} onChange={(m) => patch({ mappingZ: m })} />}
+      </Section>
+
       <Section label="Dots">
         <button onClick={() => addXYDot(widget)} style={{ ...styles.input, cursor: 'pointer' }}>＋ Dot</button>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
@@ -1716,7 +1764,7 @@ function ArtNetInputSettings({ conn, onChange }: {
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
       </Field>
       <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.5 }}>
-        LiveForge answers ArtPoll as a node with these universes ("0-3", "0, 5"), so a sender in unicast mode —
+        Maestrale answers ArtPoll as a node with these universes ("0-3", "0, 5"), so a sender in unicast mode —
         MadMapper with "Use Unicast", most consoles — finds it in its node list and sends to it.
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4, lineHeight: 1.5 }}>
@@ -1781,7 +1829,7 @@ function RecordingFolders() {
       )}
       {err && <div style={{ fontSize: 12, color: pal('#e39d60'), marginTop: 4 }}>{err}</div>}
       <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
-        Remembered on this computer, not in the project. Default: Documents/LiveForge/Recordings. The Player also lists
+        Remembered on this computer, not in the project. Default: Documents/Maestrale/Recordings. The Player also lists
         the takes just recorded, so a new take plays at once even if the folders differ. Takes are .lfdmx files — copy them
         between computers like any file.
       </div>
@@ -1916,6 +1964,15 @@ function SettingsPanel() {
   const [artnetStatus,    setArtnetStatus]    = useState<ConnStatus>(connectedProtocols['artnet']    ? 'ok' : 'idle');
   const [sacnStatus,      setSacnStatus]      = useState<ConnStatus>(connectedProtocols['sacn']      ? 'ok' : 'idle');
   const [enttecStatus,    setEnttecStatus]    = useState<ConnStatus>(connectedProtocols['enttec']    ? 'ok' : 'idle');
+  // The project reconnects by itself on open and after an edit (App): show it.
+  useEffect(() => {
+    if (connectedProtocols['midi'])      setMidiStatus('ok');
+    if (connectedProtocols['midiInput']) setMidiInputStatus('ok');
+    if (connectedProtocols['osc'])       setOscStatus('ok');
+    if (connectedProtocols['artnet'])    setArtnetStatus('ok');
+    if (connectedProtocols['sacn'])      setSacnStatus('ok');
+    if (connectedProtocols['enttec'])    setEnttecStatus('ok');
+  }, [connectedProtocols, project.connections]);
   const [midiPorts,       setMidiPorts]       = useState<string[] | null>(null);
   const [midiInputPorts,  setMidiInputPorts]  = useState<string[] | null>(null);
   const [enttecDevices,   setEnttecDevices]   = useState<{ index: number; description: string; serialNumber: string }[] | null>(null);
@@ -2120,11 +2177,9 @@ function SettingsPanel() {
 
   return (
     <>
-      <img src={logoUrl} alt="LiveForge" style={{ width: '100%', display: 'block', marginBottom: 6, objectFit: 'contain' }} />
+      <img src={logoUrl} alt="Maestrale" style={{ width: '100%', display: 'block', marginBottom: 6, objectFit: 'contain' }} />
       <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 16, letterSpacing: 0.5 }}>developed by VENTO in 2026</div>
       <div style={styles.header}>Settings</div>
-
-      <PaletteSection />
 
       <Section label="Project">
         <Field label="Name">
@@ -2132,19 +2187,14 @@ function SettingsPanel() {
             onChange={(e) => setProjectName(e.target.value)} />
         </Field>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', marginTop: 6 }}>
-          <input type="checkbox" checked={!!project.startInLive}
+          <input type="checkbox" checked={project.startInLive !== false}
             onChange={(e) => useStore.getState().setStartInLive(e.target.checked)} />
           Open in Live mode at startup
         </label>
-        <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
-          LiveForge always reopens the last project you saved or opened. For installations: put LiveForge in the startup apps, tick this, save — the PC boots straight into the show.
-        </div>
+        <AutostartToggle />
       </Section>
 
       <Section label="Trigger">
-        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6 }}>
-          Send current values of all controls across every page.
-        </div>
         <ResetBtn onClick={() => {
           const { runtime } = useStore.getState();
           for (const pg of project.pages) {
@@ -2302,7 +2352,7 @@ function SettingsPanel() {
 
       <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0 16px' }} />
 
-      <CollapsibleSection label="MIDI Output">
+      <CollapsibleSection label="MIDI Output" proto>
         <Field label="Port name">
           <input style={styles.input}
             placeholder="e.g. loopMIDI port, hardware synth"
@@ -2352,7 +2402,7 @@ function SettingsPanel() {
 
       <MidiClockSection />
 
-      <CollapsibleSection label="MIDI Input">
+      <CollapsibleSection label="MIDI Input" proto>
         <Field label="Port name">
           <input style={styles.input}
             placeholder="e.g. Launchpad"
@@ -2400,7 +2450,7 @@ function SettingsPanel() {
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection label="OSC">
+      <CollapsibleSection label="OSC" proto>
         <Field label="Destination IP">
           <input style={styles.input}
             placeholder="e.g. 192.168.1.100"
@@ -2429,7 +2479,7 @@ function SettingsPanel() {
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection label="Art-Net">
+      <CollapsibleSection label="Art-Net" proto>
         <Field label="Destination IP">
           <input style={styles.input}
             placeholder="255.255.255.255 = broadcast"
@@ -2454,7 +2504,7 @@ function SettingsPanel() {
         />
       </CollapsibleSection>
 
-      <CollapsibleSection label="sACN / E1.31">
+      <CollapsibleSection label="sACN / E1.31" proto>
         <Field label="Mode">
           <select style={styles.input}
             value={conn.sacn?.mode ?? 'multicast'}
@@ -2498,11 +2548,11 @@ function SettingsPanel() {
         />
       </CollapsibleSection>
 
-      <CollapsibleSection label="DMX recordings">
+      <CollapsibleSection label="DMX recordings" proto>
         <RecordingFolders />
       </CollapsibleSection>
 
-      <CollapsibleSection label="Enttec Open DMX USB">
+      <CollapsibleSection label="Enttec Open DMX USB" proto>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
           Requires the FTDI D2XX driver. Device index is 0 for the first dongle.
         </div>
@@ -2553,7 +2603,7 @@ function SettingsPanel() {
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection label="Audio Input">
+      <CollapsibleSection label="Audio Input" proto>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
           Select the audio input device. Used by Timeline widgets for timecode sync and future audio analysis features.
         </div>
@@ -2590,7 +2640,7 @@ function SettingsPanel() {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection label="Audio Output">
+      <CollapsibleSection label="Audio Output" proto>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
           Select the audio output device for sound track playback.
         </div>
@@ -2628,6 +2678,8 @@ function SettingsPanel() {
       </CollapsibleSection>
 
       <NetworkLiveSection />
+
+      <PaletteSection />
     </>
   );
 }
@@ -2641,7 +2693,7 @@ function MidiClockSection() {
   })));
 
   return (
-    <CollapsibleSection label="MIDI Clock">
+    <CollapsibleSection label="MIDI Clock" proto>
       <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 8, lineHeight: 1.5 }}>
         Send MIDI clock ticks (24 PPQN) via the MIDI output port, synced to the master BPM.
         Requires an active MIDI output connection.
@@ -2719,7 +2771,7 @@ function NetworkLiveSection() {
     : null;
 
   return (
-    <CollapsibleSection label="Network Live">
+    <CollapsibleSection label="Network Live" proto>
       <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 8, lineHeight: 1.5 }}>
         Serve the live canvas over the local network. Connect from any phone or PC on the same WiFi.
       </div>
@@ -2785,7 +2837,7 @@ function useSidecarSources(endpoint: string) {
       setSources(data.sources ?? []);
       if (!data.ok && data.error) setError(data.error);
     } catch {
-      setError('Sidecar not running — launch LiveForge normally');
+      setError('Sidecar not running — launch Maestrale normally');
     }
     setLoading(false);
   }
@@ -3116,6 +3168,10 @@ function SubmastersInspectorPanel({ widget, activePageId, updateWidget, updateWi
             color: 'var(--color-text-dim)', borderRadius: 3, cursor: 'pointer',
           }}
         >+ Add Widget</button>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: '10px 0 6px' }}>Exclude — left out even with "All widgets"</div>
+        <ExcludeList
+          options={eligible.flatMap((g) => g.widgets.map((w) => ({ id: w.id, label: project.pages.length > 1 ? `${g.page.name} · ${w.label || w.kind}` : (w.label || w.kind) })))}
+          value={widget.excludeWidgetIds ?? []} onChange={(ids) => patch({ excludeWidgetIds: ids })} />
       </Section>
 
       <Section label="Scene Config">
@@ -4089,7 +4145,7 @@ function NoSelectionPanel() {
 
   return (
     <>
-      <img src={logoUrl} alt="LiveForge" style={{ width: '100%', display: 'block', marginBottom: 6, objectFit: 'contain' }} />
+      <img src={logoUrl} alt="Maestrale" style={{ width: '100%', display: 'block', marginBottom: 6, objectFit: 'contain' }} />
       <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 16, letterSpacing: 0.5 }}>developed by VENTO in 2026</div>
       <div style={styles.header}>Project</div>
 
@@ -4219,25 +4275,24 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function CollapsibleSection({ label, children, defaultOpen = false }: {
+function CollapsibleSection({ label, children, defaultOpen = false, proto = false }: {
   label: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  proto?: boolean;   // a connection (OSC, Art-Net…): outlined in the interface colour, to find it at a glance
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{ marginBottom: open ? 18 : 10 }}>
+    <div style={{ marginBottom: open ? 14 : 4 }}>
       <div
         style={{
-          fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
-          color: 'var(--color-text-dim)', cursor: 'pointer', userSelect: 'none',
+          fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+          color: proto ? `var(--color-accent, ${pal('#4fb3b8')})` : 'var(--color-text-dim)', cursor: 'pointer', userSelect: 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          // These collapsed headers are how you reach OSC / MIDI / Art-Net on a
-          // touchscreen. A bare text line is far too small to hit reliably, so
-          // give each one a full-height button-shaped target.
-          minHeight: 44, padding: '0 10px', boxSizing: 'border-box',
-          background: 'var(--color-surface-2)',
-          border: '1px solid var(--color-border)',
+          // Slim but still a whole-width target, so it stays easy to hit.
+          minHeight: 28, padding: '0 10px', boxSizing: 'border-box',
+          background: proto ? `rgba(${palRgb('#4fb3b8')},0.07)` : 'var(--color-surface-2)',
+          border: `1px solid ${proto ? `var(--color-accent, ${pal('#4fb3b8')})` : 'var(--color-border)'}`,
           borderRadius: 'var(--radius-sm)',
           touchAction: 'manipulation',
           marginBottom: open ? 10 : 0,
@@ -4245,7 +4300,7 @@ function CollapsibleSection({ label, children, defaultOpen = false }: {
         onClick={() => setOpen((v) => !v)}
       >
         <span>{label}</span>
-        <span style={{ fontSize: 12, opacity: 0.6 }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 10, opacity: 0.6 }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && children}
     </div>
@@ -4579,10 +4634,16 @@ function LfoInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRec
             <NumInput value={widget.phase} onChange={(v) => patch({ phase: Math.max(0, Math.min(1, v)) })} step={0.01} />
           </Field>
         </Gate>
+        <Gate linked={linked.has(-8)}>
+          <Field label={`Quantize · ${quantLabel(widget.quantize ?? 0)}`}>
+            <input type="range" min={0} max={1} step={0.01} value={widget.quantize ?? 0} style={{ width: '100%' }}
+              onChange={(e) => patch({ quantize: Number(e.target.value) })} />
+          </Field>
+        </Gate>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
           Offset moves every output forward together (0.5 = half a cycle: a sine starts at the top). Phase spreads the outputs
           by index: output k of n is phase × k/(n−1) after the first — 0 = all identical, 0.5 with 4 outputs = 0, ⅙, ⅓, ½ of a cycle.
-          Remote inputs: PLAY, FREQ (0.01–20 Hz, replaces mode and speed), AMP, OFFSET, BIAS, PHASE, RESET. Link them with Shift (dots on the top edge),
+          Quantize: 0 = smooth; higher = the wave moves in fewer steps per cycle and holds still between them; at the end, one new value per cycle. Remote inputs: PLAY, FREQ (0.01–20 Hz, replaces mode and speed), AMP, OFFSET, BIAS, PHASE, RESET, QUANT. Link them with Shift (dots on the top edge),
           the Router page, or right-click the speed badge. A linked one is greyed here.
         </div>
       </Section>
@@ -4706,7 +4767,7 @@ function DmxMonitorInspectorPanel({ widget, activePageId, updateWidget, updateWi
           <Field label="Direction">
             <select style={styles.input} value={widget.source} onChange={(e) => patch({ source: e.target.value as 'in' | 'out' })}>
               <option value="in">IN — what arrives</option>
-              <option value="out">OUT — what LiveForge sends</option>
+              <option value="out">OUT — what Maestrale sends</option>
             </select>
           </Field>
           {(
@@ -4806,12 +4867,12 @@ function DmxRecorderInspectorPanel({ widget, activePageId, updateWidget, updateW
         <select style={styles.input} value={widget.source ?? 'artnet'} onChange={(e) => patch({ source: e.target.value as NonNullable<typeof widget.source> })}>
           <option value="artnet">IN — Art-Net input</option>
           <option value="sacn">IN — sACN input</option>
-          <option value="out-artnet">OUT — what LiveForge sends on Art-Net</option>
-          <option value="out-sacn">OUT — what LiveForge sends on sACN</option>
-          <option value="out-enttec">OUT — what LiveForge sends on Open DMX (Enttec)</option>
+          <option value="out-artnet">OUT — what Maestrale sends on Art-Net</option>
+          <option value="out-sacn">OUT — what Maestrale sends on sACN</option>
+          <option value="out-enttec">OUT — what Maestrale sends on Open DMX (Enttec)</option>
         </select>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
-          IN needs that input on in Settings (for sACN, the universes it listens to). OUT records LiveForge's own output —
+          IN needs that input on in Settings (for sACN, the universes it listens to). OUT records Maestrale's own output —
           every widget, link, LFO and player merged — sampled 44 times a second, every universe in use (Open DMX = universe 0).
           A take holds one source.
         </div>
@@ -4900,6 +4961,9 @@ function SketchInspectorPanel({ widget, activePageId, updateWidget, updateWidget
         <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
       </Section>
       <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Drawing preset">
+        <SketchPresetBar w={widget} pageId={activePageId} />
+      </Section>
       <Section label="Transport">
         <TransportButtons widgetId={widget.id} playLinked={linked.has(-1)} resetLinked={linked.has(-3)} />
         <div style={{ height: 6 }} />
@@ -4942,6 +5006,48 @@ function SketchInspectorPanel({ widget, activePageId, updateWidget, updateWidget
           {(widget.strokes ?? []).length} line(s). Draw in Live; lines play one after the other in the order drawn. Alt+click a line to delete it.
         </div>
         <button onClick={() => patch({ strokes: [] })} style={{ ...styles.input, cursor: 'pointer', marginTop: 6, color: pal('#e39d60') }}>Clear drawing</button>
+      </Section>
+    </>
+  );
+}
+
+function EtcInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').EtcWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(p: Partial<import('../../../../shared/types/project').EtcWidget>) { updateWidget(activePageId, widget.id, p as never); }
+  return (
+    <>
+      <div style={styles.header}>ETC</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Eos OSC">
+        <EtcSettings w={widget} update={patch} />
+      </Section>
+    </>
+  );
+}
+
+function EncoderInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').EncoderWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(p: Partial<import('../../../../shared/types/project').EncoderWidget>) { updateWidget(activePageId, widget.id, p as never); }
+  return (
+    <>
+      <div style={styles.header}>Encoder</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Encoders">
+        <EncoderSettings w={widget} update={patch} />
       </Section>
     </>
   );
@@ -5603,5 +5709,218 @@ function TransportTrigger({ label, hint, mapping, set, type, onType }: {
         </>
       )}
     </>
+  );
+}
+
+// Start with Windows: Maestrale opens by itself when the PC starts, with the
+// last project exactly as it was left (installations).
+function AutostartToggle(): React.JSX.Element {
+  const [on, setOn] = useState(false);
+  useEffect(() => { bridge.invoke('tr:app:autostart', null).then((v) => setOn(!!v)).catch(() => {}); }, []);
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', marginTop: 6 }}>
+      <input type="checkbox" checked={on}
+        onChange={(e) => { const v = e.target.checked; setOn(v); bridge.invoke('tr:app:autostart', v).then((r) => setOn(!!r)).catch(() => {}); }} />
+      Start Maestrale with Windows
+    </label>
+  );
+}
+
+// XY pad presets: Eos channel / group pan-tilt, plain OSC, cameras, DMX, MIDI.
+function XYPresetBar({ widget, patch }: { widget: XYPadWidget; patch: (p: Partial<XYPadWidget>) => void }): React.JSX.Element {
+  const [id, setId] = useState('');
+  const [n, setN] = useState(1);
+  const p = XY_PRESETS.find((x) => x.id === id);
+  const groups = [...new Set(XY_PRESETS.map((x) => x.group))];
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <select style={{ ...styles.input, flex: 1, minWidth: 0 }} value={id} onChange={(e) => setId(e.target.value)}>
+          <option value="">— preset —</option>
+          {groups.map((g) => (
+            <optgroup key={g} label={g}>
+              {XY_PRESETS.filter((x) => x.group === g).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <button disabled={!p} onClick={() => {
+          if (!p) return;
+          useStore.getState().captureHistory();
+          patch(applyXYPreset(widget, p, n));
+        }} style={{ ...styles.input, width: 'auto', cursor: p ? 'pointer' : 'default', color: p ? 'var(--lf-aqua)' : '#555' }}>Apply</button>
+      </div>
+      {p?.usesN && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 6, color: 'var(--color-text-dim)' }}>
+          {p.usesN}
+          <input className="lf-no-spin" type="number" min={1} value={n} onChange={(e) => setN(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+            style={{ ...styles.input, width: 80 }} />
+        </label>
+      )}
+      {p?.note && <div style={{ fontSize: 11, color: '#888', marginTop: 4, lineHeight: 1.4 }}>{p.note}</div>}
+      {p && <div style={{ fontSize: 11, color: '#666', marginTop: 4, lineHeight: 1.4 }}>Sets dot 1 (and Z); ＋ Dot continues with the next {p.usesN?.toLowerCase() ?? 'address'}.</div>}
+    </div>
+  );
+}
+
+type ShellW = import('../../../../shared/types/project').ShellWidget;
+type PaletteW = import('../../../../shared/types/project').PaletteWidget;
+type MergeW = import('../../../../shared/types/project').MergeWidget;
+
+function ShellInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: ShellW; activePageId: string; updateWidget: StoreState['updateWidget']; updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  const patch = (p: Partial<ShellW>) => updateWidget(activePageId, widget.id, p as never);
+  const [editing, setEditing] = useState<number | null>(null);
+  return (
+    <>
+      <div style={styles.header}>Shell</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Buttons">
+        {widget.buttons.map((b, i) => (
+          <div key={b.id} style={{ display: 'flex', gap: 4, marginBottom: 4, alignItems: 'center' }}>
+            <span style={{ width: 18, fontSize: 11, color: '#666' }}>{i + 1}</span>
+            <button onClick={() => setEditing(i)} style={{ ...styles.input, flex: 1, textAlign: 'left', cursor: 'pointer' }}>
+              {b.label || shellAction(b.action)?.name}
+              <span style={{ color: '#666', fontSize: 11 }}>{b.label !== shellAction(b.action)?.name ? ` · ${shellAction(b.action)?.name ?? b.action}` : ''}</span>
+            </button>
+          </div>
+        ))}
+        <button onClick={() => { patch({ buttons: [...widget.buttons, { id: Math.random().toString(36).slice(2), label: 'Turn off PC', action: 'shutdown', delay: 10 }] }); setEditing(widget.buttons.length); }}
+          style={{ ...styles.input, cursor: 'pointer' }}>＋ Button</button>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Each button is also an input: Shift-drag a Clock row onto it to turn the PC off at a time. Turn off / restart count down first
+          (Cancel on the widget) and save where Maestrale is, so with "Start Maestrale with Windows" it comes back exactly as it was.
+        </div>
+      </Section>
+      {editing !== null && widget.buttons[editing] && (
+        <ShellButtonEditor button={widget.buttons[editing]}
+          onChange={(nb) => patch({ buttons: widget.buttons.map((x, j) => (j === editing ? nb : x)) })}
+          onRemove={() => { useStore.getState().dropCellAndShiftLinks(widget.id, editing); patch({ buttons: widget.buttons.filter((_, j) => j !== editing) }); setEditing(null); }}
+          onClose={() => setEditing(null)} />
+      )}
+      <FrameSection style={widget.style} patchStyle={(p) => patch({ style: { ...widget.style, ...p } })} />
+    </>
+  );
+}
+
+function PaletteInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: PaletteW; activePageId: string; updateWidget: StoreState['updateWidget']; updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  const patch = (p: Partial<PaletteW>) => updateWidget(activePageId, widget.id, p as never);
+  const [editing, setEditing] = useState<number | null>(null);
+  return (
+    <>
+      <div style={styles.header}>Palette</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Colours">
+        <Row>
+          <Field label="How many"><NumInput value={widget.colors.length} min={1} max={64} onChange={(v) => setPaletteCount(widget, v)} /></Field>
+          <Field label="Per row"><NumInput value={widget.cols} min={1} max={16} onChange={(v) => patch({ cols: Math.max(1, Math.min(16, Math.round(v))) })} /></Field>
+        </Row>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4, marginTop: 6 }}>
+          {widget.colors.map((c, k) => (
+            <button key={k} onClick={() => setEditing(k)} title={`${k + 1} · ${c}`}
+              style={{ height: 30, borderRadius: 3, background: c, border: '1px solid #333', cursor: 'pointer' }} />
+          ))}
+          <button onClick={() => { setPaletteCount(widget, widget.colors.length + 1); setEditing(widget.colors.length); }}
+            title="One more colour"
+            style={{ height: 30, borderRadius: 3, background: 'transparent', border: '1px dashed #444', color: '#888', cursor: 'pointer' }}>＋</button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Each colour puts out three cells, R G B (0–1). For colour presets: Shift-drag all of them onto a Merge set to LTP, by 3,
+          and its outputs 1 2 3 onto the R G B faders. In Live: tap a colour to pick it, hold or right-click to edit it.
+        </div>
+      </Section>
+      {editing !== null && widget.colors[editing] !== undefined && (
+        <ColorEditor color={widget.colors[editing]} model={widget.model ?? 'rgb'} onModel={(model) => patch({ model })}
+          onChange={(hex) => patch({ colors: widget.colors.map((x, j) => (j === editing ? hex : x)) })}
+          onRemove={widget.colors.length > 1 ? () => {
+            for (let j = 2; j >= 0; j--) useStore.getState().dropCellAndShiftLinks(widget.id, 3 * editing + j);
+            patch({ colors: widget.colors.filter((_, j) => j !== editing) }); setEditing(null);
+          } : undefined}
+          onClose={() => setEditing(null)} />
+      )}
+      <FrameSection style={widget.style} patchStyle={(p) => patch({ style: { ...widget.style, ...p } })} />
+    </>
+  );
+}
+
+function MergeInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: MergeW; activePageId: string; updateWidget: StoreState['updateWidget']; updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  const patch = (p: Partial<MergeW>) => updateWidget(activePageId, widget.id, p as never);
+  const modes: [MergeW['mode'], string, string][] = [
+    ['ltp', 'LTP', 'the group moved or touched last wins (colour presets)'],
+    ['htp', 'HTP', 'highest of each slot wins'],
+    ['min', 'LOW', 'lowest of each slot'],
+    ['avg', 'AVG', 'average of each slot'],
+  ];
+  return (
+    <>
+      <div style={styles.header}>Merge</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Mode">
+        <div style={{ display: 'flex', gap: 4 }}>
+          {modes.map(([m, name]) => (
+            <button key={m} onClick={() => patch({ mode: m })}
+              style={{ ...styles.input, cursor: 'pointer', textAlign: 'center', background: widget.mode === m ? 'var(--lf-aqua)' : undefined, color: widget.mode === m ? '#000' : undefined, fontWeight: widget.mode === m ? 700 : 400 }}>{name}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6 }}>{modes.find((x) => x[0] === widget.mode)?.[2]}</div>
+      </Section>
+      <Section label="Merge every">
+        <Row>
+          <Field label="Inputs per group = outputs"><NumInput value={widget.every} min={1} max={16} onChange={(v) => {
+            const n = Math.max(1, Math.min(16, Math.round(v)));
+            for (let i = widget.every - 1; i >= n; i--) useStore.getState().dropCellAndShiftLinks(widget.id, i);
+            patch({ every: n });
+          }} /></Field>
+          <Field label="Smooth (s)"><NumInput value={widget.smooth} min={0} max={60} step={0.1} onChange={(v) => patch({ smooth: Math.max(0, Math.min(60, Math.round(v * 100) / 100)) })} /></Field>
+        </Row>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          In Live, hold Shift and drop as many cables as you like on the dashed box: each becomes the next input (in 1, in 2…).
+          With 3: in 1-3 are group 1, in 4-6 group 2… and outputs 1 2 3 carry the merged R G B. Smooth = seconds to glide to a new value.
+        </div>
+      </Section>
+      <FrameSection style={widget.style} patchStyle={(p) => patch({ style: { ...widget.style, ...p } })} />
+    </>
+  );
+}
+
+// Eos user for one widget: writes it into every OSC output it has, so this
+// widget talks to the desk as its own user and does not fight the operator.
+function EosUserRow({ widget, activePageId }: { widget: import('../../../../shared/types/project').Widget; activePageId: string }): React.JSX.Element | null {
+  const user = widgetEosUser(widget);
+  const [open, setOpen] = useState(user > 0);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{ ...styles.input, cursor: 'pointer', color: 'var(--color-text-dim)', marginTop: 6 }}>
+        + Eos user
+      </button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 3 }}>Eos user (all outputs)</div>
+      <input className="lf-no-spin" type="number" min={0} max={99} style={{ ...styles.input, width: 90 }} value={user}
+        onChange={(e) => {
+          const n = Math.max(0, Math.min(99, Math.round(Number(e.target.value) || 0)));
+          useStore.getState().updateWidget(activePageId, widget.id, setWidgetEosUserPatch(widget, n) as never);
+        }} />
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5, lineHeight: 1.5 }}>
+        {user > 0
+          ? `Every /eos/… address of this widget goes out as /eos/user/${user}/… — its own selection and command line on the desk.`
+          : '0 = the same user as the console. Put a number in to work alongside whoever is at the desk.'}
+      </div>
+    </div>
   );
 }

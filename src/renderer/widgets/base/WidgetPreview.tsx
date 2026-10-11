@@ -8,6 +8,8 @@ import type { Widget, CuesWidget, TimelineWidget, SpoutInputWidget, NdiInputWidg
 import SliderBankDesign from '../SliderBank/SliderBankDesign';
 import SketchDesign from '../Sketch/SketchDesign';
 import AudioLevelDesign from '../AudioLevel/AudioLevelDesign';
+import EncoderDesign from '../Encoder/EncoderDesign';
+import EtcLive from '../Etc/EtcLive';
 import MasterLevelDesign from '../MasterLevel/MasterLevelDesign';
 import InstanceDesign from '../Instance/InstanceDesign';
 import ManualDesign from '../Manual/ManualDesign';
@@ -30,6 +32,9 @@ import SoundPlayerDesign from '../SoundPlayer/SoundPlayerDesign';
 import LfoWidgetDesign from '../LfoWidget/LfoWidgetDesign';
 import MathWidgetDesign from '../MathWidget/MathWidgetDesign';
 import ValueDisplayDesign from '../ValueDisplay/ValueDisplayDesign';
+import ShellLive from '../Shell/ShellLive';
+import PaletteLive from '../Palette/PaletteLive';
+import MergeLive from '../Merge/MergeLive';
 
 export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX.Element {
   const inner = (() => {
@@ -57,6 +62,8 @@ export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX
       case 'masterLevel':      return <MasterLevelDesign widget={widget as MasterLevelWidget} />;
       case 'sketch':           return <SketchDesign widget={widget as SketchWidget} />;
       case 'audioLevel':       return <AudioLevelDesign widget={widget as AudioLevelWidget} />;
+      case 'etc':              return <EtcLive preview widget={widget as import('../../../shared/types/project').EtcWidget} />;
+      case 'encoder':          return <EncoderDesign widget={widget as import('../../../shared/types/project').EncoderWidget} />;
       case 'instance':         return <InstanceDesign widget={widget as InstanceWidget} />;
       case 'keyboard':         return <KeyboardDesign widget={widget as KeyboardWidget} />;
       case 'manual':           return <ManualDesign widget={widget as ManualWidget} />;
@@ -64,6 +71,9 @@ export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX
       case 'dmxPlayer':        return <DmxPlayerDesign widget={widget as DmxPlayerWidget} />;
       case 'clock':            return <ClockDesign widget={widget as ClockWidget} />;
       case 'dmxMonitor':       return <DmxMonitorDesign widget={widget as DmxMonitorWidget} />;
+      case 'shell':            return <ShellLive preview widget={widget} />;
+      case 'palette':          return <PaletteLive preview widget={widget} />;
+      case 'merge':            return <MergeLive preview widget={widget} />;
       default:                 return null;
     }
   })();

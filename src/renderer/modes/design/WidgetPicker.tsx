@@ -25,6 +25,9 @@ const WIDGET_GROUPS: { title: string; col?: number; items: WidgetOption[] }[] = 
     { kind: 'sliderBank',    label: 'Slider Bank',    description: 'Bank of vertical or horizontal faders. Each fader maps to its own MIDI/OSC/DMX output.' },
     { kind: 'knobBank',      label: 'Knob Bank',      description: 'Bank of rotary knobs — drag up/right to raise, down/left to lower.' },
     { kind: 'buttonGrid',    label: 'Button Grid',    description: 'Grid of momentary, toggle, pulse or radio buttons with per-cell colours.' },
+    { kind: 'etc',           label: 'ETC',            description: 'An ETC Eos Gio @5 surface laid out like the desk: every key, the four encoders and the two masters, already sending Eos OSC.' },
+    { kind: 'encoder',       label: 'Encoder',        description: 'Endless encoders for a lighting desk: they send only the change (+3, −1), so the desk value never jumps. OSC or MIDI relative, presets for Eos / grandMA3.' },
+    { kind: 'palette',       label: 'Palette',        description: 'Colour swatches: tap one to pick it, hold (or right-click) to edit it. Each colour puts out R, G, B — into a Merge for colour presets.' },
     { kind: 'xyPad',         label: 'XY Pad',         description: 'Two-axis touch surface — X and Y each drive their own output.' },
     { kind: 'keyboard',      label: 'Keyboard',       description: 'Bind computer keys as buttons — press the key or tap it on screen. Each key is linkable.' },
   ] },
@@ -35,7 +38,7 @@ const WIDGET_GROUPS: { title: string; col?: number; items: WidgetOption[] }[] = 
     { kind: 'masterLevel',   label: 'Master Level',   description: 'Master fader that scales EVERYTHING going out on one protocol (DMX/OSC/MIDI).' },
     { kind: 'dmxRecorder',   label: 'DMX Recorder',   description: 'Records the incoming Art-Net stream to a take on disk — REC from here or from the Router.' },
     { kind: 'dmxPlayer',     label: 'DMX Player',     description: 'Plays a recorded take back out on Art-Net or sACN, with loop, scrub and universe offset.' },
-    { kind: 'dmxMonitor',    label: 'DMX Monitor',    description: 'Grid of DMX channels — what arrives (Art-Net in) or what LiveForge sends (Art-Net / sACN out). Black 0, white 255.' },
+    { kind: 'dmxMonitor',    label: 'DMX Monitor',    description: 'Grid of DMX channels — what arrives (Art-Net in) or what Maestrale sends (Art-Net / sACN out). Black 0, white 255.' },
   ] },
   { title: 'Generators', col: 2, items: [
     { kind: 'lfoWidget',     label: 'LFO',            description: 'BPM-synced or Hz oscillator (sine/square/saw/triangle/random) with play/stop. ＋ adds outputs with their own phase.' },
@@ -48,11 +51,13 @@ const WIDGET_GROUPS: { title: string; col?: number; items: WidgetOption[] }[] = 
   { title: 'Routing', col: 3, items: [
     { kind: 'router',        label: 'Router',         description: 'Its own routing rows (one input to many outputs), edited in its settings. Links made by Shift, right-click and Learn live in the Router page.' },
     { kind: 'mathWidget',    label: 'Math / Merge',   description: 'Combine two cell sources with add, subtract, multiply, min, max, avg, invert.' },
+    { kind: 'merge',         label: 'Merge',          description: 'Drop as many cables as you like on its box; merges them in groups (3 = R G B) HTP, LTP, lowest or average, with a smooth glide.' },
+    { kind: 'shell',         label: 'Shell',          description: 'Buttons that act on the PC: turn off, restart, sleep, open a file or web page, a command. Inputs: fire them from a clock row.' },
     { kind: 'instance',      label: 'Instance',       description: 'Bound copy of another widget — shares the exact same value across pages.' },
   ] },
   { title: 'Sound', col: 4, items: [
     { kind: 'audioAnalyser', label: 'Audio Analyser', description: 'Kick/snare detection, BPM ramps and bass/mid/high band levels from an audio input.' },
-    { kind: 'audioLevel',    label: 'Audio Level',    description: 'OUT: master volume of every sound LiveForge plays. IN: level meter of an audio input, linkable as a source.' },
+    { kind: 'audioLevel',    label: 'Audio Level',    description: 'OUT: master volume of every sound Maestrale plays. IN: level meter of an audio input, linkable as a source.' },
     { kind: 'soundPlayer',   label: 'Sound Player',   description: 'Playlist with per-track play/pause/stop and volume — triggerable from the Router.' },
   ] },
   { title: 'Texture', col: 4, items: [

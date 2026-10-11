@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import type { RouterRow, Widget } from '../../../shared/types/project';
+import type { RouterRow, RouterOutput, Widget } from '../../../shared/types/project';
 import type { Mapping } from '../../../shared/types/mapping';
 import { useStore } from '../../store';
 import { cellCount } from '../../widgets/utils';
+import { setMergeInput } from '../../widgets/Merge/mergeEngine';
 import { remapRange, isIdentityRange } from '../../widgets/base/range';
 import { dispatchValue } from '../../ipc/dispatch';
 import { pressCell, releaseCell } from '../../widgets/ButtonGrid/behavior';
@@ -58,7 +59,7 @@ function driveTimelineTransport(widgetId: string, cellIdx: number, v: number, in
   const prev = lastTransportInput.get(key) ?? 0;
   lastTransportInput.set(key, v);
   // `initial`: the first value ever seen on a streamed input (Art-Net). A
-  // console that is already sitting at full when LiveForge starts listening
+  // console that is already sitting at full when Maestrale starts listening
   // must not fire GO by itself — only a real move does.
   if (initial) return;
   if (prev < 0.5 && v >= 0.5) sendTimelineCommand(widgetId, cmd);
@@ -67,12 +68,13 @@ function driveTimelineTransport(widgetId: string, cellIdx: number, v: number, in
 // Widgets whose cells are triggers, not levels: they act on a rising edge, so
 // the first value of a stream (a console already at full when we start
 // listening) must not reach them — only a real move may fire.
-const TRIGGER_KINDS = new Set<Widget['kind']>(['dmxRecorder', 'dmxPlayer', 'cues', 'soundPlayer', 'keyboard']);
+const TRIGGER_KINDS = new Set<Widget['kind']>(['dmxRecorder', 'dmxPlayer', 'cues', 'soundPlayer', 'keyboard', 'shell']);
 const lastTriggerInput = new Map<string, number>();
 
 function driveCell(widgetId: string, cellIdx: number, v: number, isButton: boolean, initial = false): void {
   if (cellIdx < 0) {
     const tw = findWidget(widgetId);
+    if (tw?.kind === 'merge') { setMergeInput(widgetId, -cellIdx, v); return; }
     if (tw?.kind === 'timeline') { driveTimelineTransport(widgetId, cellIdx, v, initial); return; }
     // Continuous parameter inputs (LFO SPEED / RATE / PHASE): just the value.
     const pi = tw ? paramInputOf(tw, cellIdx) : undefined;
@@ -112,6 +114,53 @@ function driveButtonCell(widgetId: string, cellIdx: number, v: number, initial =
   else if (prev >= 0.5 && v < 0.5) releaseCell(w, cellIdx);
 }
 
+// ─── Smooth / spring ──────────────────────────────────────────────────────────
+// An output with a motion filter does not jump: the engine keeps a target per
+// output (and per source cell for ALL rows) and moves a follower towards it on
+// every frame, sending what the follower reads. Idle followers cost nothing.
+interface Follower { target: number; s: number; x: number; v: number; out: RouterOutput; srcIndex?: number }
+const followers = new Map<string, Follower>();
+let rafId = 0;
+let lastT = 0;
+
+function filtered(out: RouterOutput): boolean { return !!(out.smoothOn || out.springOn); }
+
+function follow(key: string, out: RouterOutput, target: number, srcIndex: number | undefined, from: number): void {
+  const f = followers.get(key);
+  if (f) { f.target = target; f.out = out; }
+  else followers.set(key, { target, s: from, x: from, v: 0, out, srcIndex });
+  if (!rafId) { lastT = performance.now(); rafId = requestAnimationFrame(stepFollowers); }
+}
+
+function stepFollowers(now: number): void {
+  const dt = Math.min(0.05, Math.max(0.001, (now - lastT) / 1000));
+  lastT = now;
+  for (const [key, f] of followers) {
+    const o = f.out;
+    const dir = o.smoothDir ?? 'both';
+    const rising = f.target > f.s;
+    if (o.smoothOn && (dir === 'both' || (dir === 'in') === rising)) {
+      const tau = 0.02 + (o.smooth ?? 0.3) * 1.5;
+      f.s += (f.target - f.s) * (1 - Math.exp(-dt / tau));
+    } else f.s = f.target;
+    if (o.springOn) {
+      const zeta = 1 - 0.92 * (o.spring ?? 0.5);    // damping: 1 = no bounce
+      const w = 2 * Math.PI * 2.2;                 // ~2 Hz
+      const a = w * w * (f.s - f.x) - 2 * zeta * w * f.v;
+      f.v += a * dt;
+      f.x += f.v * dt;
+    } else { f.x = f.s; f.v = 0; }
+    const settled = Math.abs(f.target - f.s) < 1e-4 && Math.abs(f.s - f.x) < 1e-4 && Math.abs(f.v) < 1e-3;
+    if (settled) { f.x = f.target; followers.delete(key); }
+    sendOut(o, Math.max(0, Math.min(1, f.x)), f.srcIndex, false);
+  }
+  rafId = followers.size ? requestAnimationFrame(stepFollowers) : 0;
+}
+
+// Where a follower starts: what the output last sent, else the destination's
+// current value, so switching smooth on never makes the target jump first.
+const lastOut = new Map<string, number>();
+
 // srcIndex is set when the row listens to a whole widget: the value then belongs
 // to one specific source cell, and an ALL output mirrors it onto the SAME index
 // (bank → bank, 1:1). Without it an ALL output fans one value out to every cell.
@@ -126,6 +175,20 @@ function routeValue(row: RouterRow, vIn: number, srcIndex?: number, initial = fa
     if (out.muted) continue;   // switched off on the Router page
     // Each output gets its own travel through the source's range.
     const v = isIdentityRange(out) ? vIn : remapRange(vIn, out);
+    const key = `${row.id}:${out.id}:${srcIndex ?? '-'}`;
+    if (filtered(out) && !initial) {
+      follow(key, out, v, srcIndex, lastOut.get(key) ?? v);
+      lastOut.set(key, v);
+      continue;
+    }
+    followers.delete(key);
+    lastOut.set(key, v);
+    sendOut(out, v, srcIndex, initial);
+  }
+}
+
+function sendOut(out: RouterOutput, v: number, srcIndex: number | undefined, initial: boolean): void {
+  {
     if (out.targetWidgetId) {
       const isButton = isButtonTarget(out.targetWidgetId);
       if (out.targetAllCells) {

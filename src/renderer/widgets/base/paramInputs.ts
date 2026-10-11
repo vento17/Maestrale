@@ -18,7 +18,19 @@ export const LFO_INPUTS: ParamInput[] = [
   { index: -5, key: 'bias',   label: 'BIAS',   hint: 'shape: moves the triangle peak, widens/narrows the square — half = none' },
   { index: -6, key: 'phase',  label: 'PHASE',  hint: 'spread across the outputs by index: 0 = all together, 0.5 = last output half a cycle after the first' },
   { index: -7, key: 'reset',  label: 'RESET',  hint: 'back to the start of the cycle on each press' },
+  { index: -8, key: 'quant',  label: 'QUANT',  hint: 'quantize: 0 smooth, higher = fewer held steps per cycle, 1 = one new value per cycle' },
 ];
+
+// Quantize 0…1 → steps per cycle: 0 = smooth (Infinity), up to 1 = one per cycle.
+export function quantSteps(q: number): number {
+  if (q <= 0.001) return Infinity;
+  if (q >= 0.999) return 1;
+  return Math.max(2, Math.round(2 + 62 * (1 - q) * (1 - q)));
+}
+export function quantLabel(q: number): string {
+  const s = quantSteps(q);
+  return s === Infinity ? 'smooth' : s === 1 ? '1 step / cycle' : `${s} steps`;
+}
 
 export const LFO_SPEEDS = [0.25, 0.5, 1, 2, 4];
 

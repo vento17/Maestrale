@@ -7,7 +7,7 @@ import { sacnOut, sacnIn } from './sacnHandlers';
 import { enttecOut } from './enttecHandlers';
 import type { DmxRecSource } from '../../shared/types/ipc';
 
-// What LiveForge itself sends, as frames: the recorder samples it at 44 Hz
+// What Maestrale itself sends, as frames: the recorder samples it at 44 Hz
 // when its source is one of the outputs.
 function outputFrames(source: DmxRecSource): Map<number, Uint8Array> {
   const m = new Map<number, Uint8Array>();
@@ -39,10 +39,12 @@ export function registerDmxTakeHandlers(win: BrowserWindow): void {
   );
   // Folders: chosen in Settings, remembered on THIS computer (not in the
   // project — a path means nothing on another machine). Default: Documents/
-  // LiveForge/Recordings. The old Save/Recordings is still read if it exists.
+  // Maestrale/Recordings. The old Save/Recordings is still read if it exists.
   const cfgFile = path.join(app.getPath('userData'), 'dmx-recordings.json');
-  const defaultDir = path.join(app.getPath('documents'), 'LiveForge', 'Recordings');
-  const legacyDir = path.join(baseDir, 'Recordings');
+  const defaultDir = path.join(app.getPath('documents'), 'Maestrale', 'Recordings');
+  // Older folders are still played from: Save/Recordings, and Documents/
+  // LiveForge/Recordings from before the app was renamed.
+  const legacyDirs = [path.join(baseDir, 'Recordings'), path.join(app.getPath('documents'), 'LiveForge', 'Recordings')];
   const loadCfg = (): { record: string; play: string } => {
     try {
       const c = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
@@ -50,7 +52,7 @@ export function registerDmxTakeHandlers(win: BrowserWindow): void {
     } catch { /* first run */ }
     return { record: defaultDir, play: defaultDir };
   };
-  const apply = (c: { record: string; play: string }) => svc.setFolders(c.record, c.play, fs.existsSync(legacyDir) ? [legacyDir] : []);
+  const apply = (c: { record: string; play: string }) => svc.setFolders(c.record, c.play, legacyDirs.filter((d) => fs.existsSync(d)));
   apply(loadCfg());
   ipcMain.handle('tr:dmxRec:getFolders', () => svc.folders());
   ipcMain.handle('tr:dmxRec:setFolders', (_e, p) => {

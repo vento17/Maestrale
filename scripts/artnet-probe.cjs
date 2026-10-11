@@ -1,4 +1,4 @@
-// Art-Net probe — run with LiveForge CLOSED and the sender (MadMapper…) running:
+// Art-Net probe — run with Maestrale CLOSED and the sender (MadMapper…) running:
 //   node scripts/artnet-probe.cjs            listens on every address
 //   node scripts/artnet-probe.cjs 127.0.0.1  listens on one address
 // Prints who holds UDP 6454, sends itself a test packet, then shows every

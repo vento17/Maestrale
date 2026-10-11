@@ -7,7 +7,7 @@ import type { DmxInputPayload, DmxInputStatusPayload } from '../../shared/types/
 // flag, per-sender frames, taps), tagged protocol 'sacn'.
 //
 // Multicast is why sACN shares a computer well: every program that joined the
-// group gets every packet, so MadMapper, TouchDesigner and LiveForge can all
+// group gets every packet, so MadMapper, TouchDesigner and Maestrale can all
 // listen on the same PC at once — unlike Art-Net unicast to 127.0.0.1.
 //
 // Merge: highest priority wins (E1.31). Among senders at the same priority the

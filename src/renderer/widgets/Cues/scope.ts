@@ -40,13 +40,35 @@ export function cueScopeWidgets(project: Project, scopePageId?: string): { id: s
 }
 
 // The widgets a cue should actually capture, given its scope.
-export function widgetsInScope(project: Project, scopePageId?: string, scopeWidgetId?: string): Widget[] {
+export function widgetsInScope(project: Project, scopePageId?: string, scopeWidgetId?: string, excludeIds: string[] = []): Widget[] {
   const pages = (!scopePageId || scopePageId === CUE_SCOPE_ALL)
     ? project.pages
     : project.pages.filter((p) => p.id === scopePageId);
-  const all = pages.flatMap((p) => p.widgets).filter(isSnapshottable);
+  const all = pages.flatMap((p) => p.widgets).filter((w) => isSnapshottable(w) && !excludeIds.includes(w.id));
   if (!scopeWidgetId || scopeWidgetId === CUE_SCOPE_ALL) return all;
   // A widget picked and then deleted (or moved off the scoped page) narrows the
   // cue to nothing rather than silently falling back to everything.
   return all.filter((w) => w.id === scopeWidgetId);
+}
+
+// What a cue stores of a generator besides its output values: its content and
+// settings. Recalling the cue puts them back, so a cue can change the drawing,
+// the wave or the pattern — not just where the output happens to be.
+export const CUE_CONTENT_KEYS: Partial<Record<Widget['kind'], string[]>> = {
+  sketch:        ['strokes', 'dots', 'delay', 'duration', 'speed', 'loop', 'pingPong', 'smooth'],
+  lfoWidget:     ['waveform', 'rateMode', 'rateMultiplier', 'rateHz', 'amplitude', 'center', 'offset', 'phase', 'bias', 'speed', 'seed', 'quantize'],
+  noiseWidget:   ['waveform', 'rateMode', 'rateMultiplier', 'rateHz', 'amplitude', 'center', 'offset', 'phase', 'bias', 'speed', 'seed', 'quantize'],
+  stepSequencer: ['stepCount', 'speedMultiplier', 'steps', 'smooth'],
+  graphWidget:   ['points', 'speedMultiplier', 'timingMode', 'manualDuration', 'playMode'],
+};
+
+export function cueContentOf(w: Widget): Record<string, unknown> | null {
+  const keys = CUE_CONTENT_KEYS[w.kind];
+  if (!keys) return null;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    const v = (w as unknown as Record<string, unknown>)[k];
+    if (v !== undefined) out[k] = JSON.parse(JSON.stringify(v));
+  }
+  return out;
 }

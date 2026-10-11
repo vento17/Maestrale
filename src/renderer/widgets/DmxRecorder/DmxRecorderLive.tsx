@@ -74,7 +74,7 @@ export default function DmxRecorderLive({ widget }: { widget: DmxRecorderWidget 
           {REC_SOURCES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <span style={{ marginLeft: 'auto', color: !inputOn ? '#a55' : isOut || live ? `var(--lf-aqua, ${pal('#4fb8b0')})` : '#777', letterSpacing: 0, textTransform: 'none' }}>
-          {isOut ? 'LiveForge out' : !inputOn ? `${srcName} in off` : live ? `${input!.packetsPerSec} pkt/s` : 'no signal'}
+          {isOut ? 'Maestrale out' : !inputOn ? `${srcName} in off` : live ? `${input!.packetsPerSec} pkt/s` : 'no signal'}
         </span>
       </div>
 
@@ -82,7 +82,7 @@ export default function DmxRecorderLive({ widget }: { widget: DmxRecorderWidget 
         data-lf-widget={widget.id} data-lf-cell={0}
         onClick={() => toggleRecording(widget, rec.recording)}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }); }}
-        title={rec.recording ? 'Stop recording' : `Record ${isOut ? `what LiveForge sends on ${srcName}` : `the incoming ${srcName}`} · right-click: link / learn`}
+        title={rec.recording ? 'Stop recording' : `Record ${isOut ? `what Maestrale sends on ${srcName}` : `the incoming ${srcName}`} · right-click: link / learn`}
         style={{
           flex: 1, minHeight: 0, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,

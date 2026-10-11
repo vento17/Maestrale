@@ -1,4 +1,5 @@
 import { pal, palRgb } from '../../palette';
+import ResizableColumn from '../ResizableColumn';
 import React from 'react';
 import { useStore, useActivePage } from '../../store';
 import type {
@@ -8,10 +9,18 @@ import type {
   SliderBankWidget, ButtonGridWidget, KnobBankWidget,
   LfoWaveform, LfoRateMode, MathOperation, ValueDisplayFormat,
   SpeedMultiplier, GraphPlayMode, SubmasterMergeMode,
+  MergeWidget, MergeMode, SketchWidget, PaletteWidget,
 } from '../../../shared/types/project';
 
 import { cueScopePages, cueScopeWidgets, widgetsInScope, CUE_SCOPE_ALL } from '../../widgets/Cues/scope';
 import CellEditModal from '../../widgets/base/CellEditModal';
+import EncoderSettings from '../../widgets/Encoder/EncoderSettings';
+import EtcSettings from '../../widgets/Etc/EtcSettings';
+import SketchPresetBar from '../../widgets/Sketch/SketchPresetBar';
+import { setPaletteCount } from '../../widgets/Palette/PaletteLive';
+import ExcludeList from '../../widgets/base/ExcludeList';
+import { SUBMASTER_KINDS } from '../../widgets/base/links';
+import { quantLabel } from '../../widgets/base/paramInputs';
 
 type UpdateFn = (patch: Record<string, unknown>) => void;
 
@@ -40,11 +49,42 @@ function SliderRow({ label, value, min, max, step, fmt, onChange }: {
           style={{ flex: 1, cursor: 'pointer', accentColor: `var(--color-accent, ${pal('#91ced2')})` }}
           onChange={(e) => onChange(parseFloat(e.target.value))}
         />
-        <span style={{ fontSize: 10, color: '#666', fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
-          {fmt ? fmt(value) : value.toFixed(2)}
-        </span>
+        <EditableNum value={value} min={min} max={max} text={fmt ? fmt(value) : value.toFixed(2)} onChange={onChange} />
       </div>
     </Row>
+  );
+}
+
+// The number next to a slider: click to type it. Shown as a percentage → typed
+// as one (50 = 50%); shown with units (×2, 1.20 Hz) → typed in those units;
+// anything else (a word like "smooth") → typed as the plain value.
+function EditableNum({ value, min, max, text, onChange }: {
+  value: number; min: number; max: number; text: string; onChange: (v: number) => void;
+}): React.JSX.Element {
+  const [edit, setEdit] = React.useState<string | null>(null);
+  const pct = text.trim().endsWith('%');
+  const shownNum = Number((text.match(/-?\d+(?:\.\d+)?/) ?? [''])[0]);
+  const unitScale = !pct && Number.isFinite(shownNum) && Math.abs(shownNum - value) < 0.01 * Math.max(1, Math.abs(value));
+  const start = pct ? String(Math.round(value * 100)) : unitScale ? String(shownNum) : String(Number(value.toFixed(3)));
+  const commit = () => {
+    if (edit === null) return;
+    const n = Number(edit.replace(',', '.').replace(/[^0-9.+-]/g, ''));
+    setEdit(null);
+    if (edit.trim() === '' || !Number.isFinite(n)) return;
+    onChange(Math.max(min, Math.min(max, pct ? n / 100 : n)));
+  };
+  if (edit !== null) {
+    return (
+      <input autoFocus onFocus={(e) => e.currentTarget.select()} value={edit} onChange={(e) => setEdit(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEdit(null); }}
+        style={{ width: 48, fontSize: 10, background: '#000', color: '#fff', border: '1px solid var(--lf-aqua)', borderRadius: 2, padding: '1px 3px', textAlign: 'right', fontFamily: 'inherit' }} />
+    );
+  }
+  return (
+    <span onClick={() => setEdit(start)} title="Click to type a value"
+      style={{ fontSize: 10, color: '#888', fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right', cursor: 'text', borderBottom: '1px dotted #333' }}>
+      {text}
+    </span>
   );
 }
 
@@ -150,6 +190,12 @@ function LfoParams({ w, update }: { w: LfoWidget; update: UpdateFn }): React.JSX
         value={w.phase} min={0} max={1}
         fmt={(v) => `${Math.round(v * 100)}%`}
         onChange={(v) => update({ phase: v })}
+      />
+      <SliderRow
+        label="Quantize"
+        value={w.quantize ?? 0} min={0} max={1}
+        fmt={(v) => quantLabel(v)}
+        onChange={(v) => update({ quantize: v })}
       />
     </>
   );
@@ -285,7 +331,7 @@ function SoundPlayerParams({ w, update }: { w: SoundPlayerWidget; update: Update
 function CuesParams({ w, update }: { w: CuesWidget; update: UpdateFn }): React.JSX.Element {
   // Same helpers as the Inspector, so the two lists cannot drift apart.
   const project = useStore((st) => st.project);
-  const count = widgetsInScope(project, w.scopePageId, w.scopeWidgetId).length;
+  const count = widgetsInScope(project, w.scopePageId, w.scopeWidgetId, w.excludeIds).length;
   return (
     <>
       <SelectRow
@@ -301,6 +347,9 @@ function CuesParams({ w, update }: { w: CuesWidget; update: UpdateFn }): React.J
         options={cueScopeWidgets(project, w.scopePageId).map((o) => ({ value: o.id, label: o.label }))}
         onChange={(v) => update({ scopeWidgetId: v })}
       />
+      <Row label="Exclude">
+        <ExcludeList compact options={cueScopeWidgets(project, w.scopePageId).filter((o) => o.id !== CUE_SCOPE_ALL)} value={w.excludeIds ?? []} onChange={(ids) => update({ excludeIds: ids })} />
+      </Row>
       <div style={{ fontSize: 10, color: '#555', padding: '2px 10px 6px', lineHeight: 1.5 }}>
         Recording captures {count} widget{count !== 1 ? 's' : ''}.
       </div>
@@ -309,13 +358,22 @@ function CuesParams({ w, update }: { w: CuesWidget; update: UpdateFn }): React.J
 }
 
 function SubmastersParams({ w, update }: { w: SubmastersWidget; update: UpdateFn }): React.JSX.Element {
+  const project = useStore((st) => st.project);
+  const many = project.pages.length > 1;
+  const opts = project.pages.flatMap((p) => p.widgets.filter((x) => x.id !== w.id && SUBMASTER_KINDS.has(x.kind))
+    .map((x) => ({ id: x.id, label: many ? `${p.name} · ${x.label || x.kind}` : (x.label || x.kind) })));
   return (
-    <ButtonGroupRow
-      label="Merge Mode"
-      options={['htp', 'ltp']}
-      value={w.mergeMode}
-      onChange={(v) => update({ mergeMode: v as SubmasterMergeMode })}
-    />
+    <>
+      <ButtonGroupRow
+        label="Merge Mode"
+        options={['htp', 'ltp']}
+        value={w.mergeMode}
+        onChange={(v) => update({ mergeMode: v as SubmasterMergeMode })}
+      />
+      <Row label="Exclude">
+        <ExcludeList compact options={opts} value={w.excludeWidgetIds ?? []} onChange={(ids) => update({ excludeWidgetIds: ids })} />
+      </Row>
+    </>
   );
 }
 
@@ -405,8 +463,78 @@ function ParamPanel({ widget, update, onEditCells }: {
     case 'cues':          return <CuesParams w={widget as CuesWidget} update={update} />;
     case 'audioAnalyser': return <AudioParams w={widget as AudioAnalyserWidget} update={update} />;
     case 'instance':      return <InstanceParams w={widget as InstanceWidget} update={update} />;
+    case 'merge':         return <MergeParams w={widget} update={update} />;
+    case 'sketch':        return <SketchParams w={widget} update={update} />;
+    case 'palette':       return <PaletteParams w={widget} update={update} />;
+    case 'etc':           return <div style={{ padding: '0 12px 12px' }}><EtcSettings w={widget as import('../../../shared/types/project').EtcWidget} update={update} /></div>;
+    case 'encoder':       return <div style={{ padding: '0 12px 12px' }}><EncoderSettings w={widget as import('../../../shared/types/project').EncoderWidget} update={update} /></div>;
     default:              return <NoParams kind={widget.kind} />;
   }
+}
+
+function MergeParams({ w, update }: { w: MergeWidget; update: UpdateFn }): React.JSX.Element {
+  const modes: { value: MergeMode; label: string }[] = [
+    { value: 'ltp', label: 'LTP — the last one touched' },
+    { value: 'htp', label: 'HTP — the highest' },
+    { value: 'min', label: 'LOW — the lowest' },
+    { value: 'avg', label: 'AVG — the average' },
+  ];
+  return (
+    <>
+      <ButtonGroupRow label="Mode" options={['LTP', 'HTP', 'LOW', 'AVG']}
+        value={(modes.find((m) => m.value === w.mode)?.value ?? 'ltp').toUpperCase().replace('MIN', 'LOW')}
+        onChange={(v) => update({ mode: ({ LTP: 'ltp', HTP: 'htp', LOW: 'min', AVG: 'avg' } as Record<string, MergeMode>)[v] })} />
+      <SliderRow label="Inputs per group = outputs" value={w.every} min={1} max={16} step={1}
+        fmt={(v) => `by ${Math.round(v)}`} onChange={(v) => update({ every: Math.round(v) })} />
+      <SliderRow label="Smooth" value={w.smooth ?? 0} min={0} max={10} step={0.05}
+        fmt={(v) => (v <= 0 ? 'off' : `${v.toFixed(2)} s`)} onChange={(v) => update({ smooth: v })} />
+      <div style={{ padding: '8px 12px', fontSize: 11, color: '#555', lineHeight: 1.5 }}>
+        {modes.find((m) => m.value === w.mode)?.label}. Hold Shift in Live and drop cables on the dashed box to add inputs.
+      </div>
+    </>
+  );
+}
+
+function SketchParams({ w, update }: { w: SketchWidget; update: UpdateFn }): React.JSX.Element {
+  const pageId = useStore((st) => st.project.pages.find((pg) => pg.widgets.some((x) => x.id === w.id))?.id) ?? '';
+  const speeds: SpeedMultiplier[] = [0.125, 0.25, 0.5, 1, 2, 4, 8];
+  const mode = !w.loop ? 'Stop' : w.pingPong ? 'Ping' : 'Loop';
+  return (
+    <>
+      <Row label="Drawing preset">
+        {pageId ? <SketchPresetBar w={w} pageId={pageId} /> : null}
+      </Row>
+      <SliderRow label="Seconds per run" value={w.duration} min={0.1} max={120} step={0.1}
+        fmt={(v) => `${v.toFixed(1)} s`} onChange={(v) => update({ duration: Math.max(0.1, v) })} />
+      <SelectRow label="Speed" value={String(w.speed ?? 1)}
+        options={speeds.map((v) => ({ value: String(v), label: v < 1 ? `×${v}  (slower)` : v === 1 ? '×1  (normal)' : `×${v}  (faster)` }))}
+        onChange={(v) => update({ speed: parseFloat(v) })} />
+      <ButtonGroupRow label="At the end" options={['Stop', 'Loop', 'Ping']} value={mode}
+        onChange={(v) => update(v === 'Stop' ? { loop: false, pingPong: false } : v === 'Loop' ? { loop: true, pingPong: false } : { loop: true, pingPong: true })} />
+      <SliderRow label="Dots" value={w.dots} min={1} max={32} step={1}
+        fmt={(v) => String(Math.round(v))} onChange={(v) => update({ dots: Math.round(v) })} />
+      <SliderRow label="Delay between dots" value={w.delay} min={0} max={1}
+        fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => update({ delay: v })} />
+      <SliderRow label="Smooth" value={w.smooth ?? 0} min={0} max={1}
+        fmt={(v) => (v <= 0 ? 'off' : `${Math.round(v * 100)}%`)} onChange={(v) => update({ smooth: v })} />
+    </>
+  );
+}
+
+function PaletteParams({ w, update }: { w: PaletteWidget; update: UpdateFn }): React.JSX.Element {
+  return (
+    <>
+      <SliderRow label="How many colours" value={w.colors.length} min={1} max={64} step={1}
+        fmt={(v) => String(Math.round(v))} onChange={(v) => setPaletteCount(w, v)} />
+      <SliderRow label="Colours per row" value={w.cols} min={1} max={16} step={1}
+        fmt={(v) => String(Math.round(v))} onChange={(v) => update({ cols: Math.round(v) })} />
+      <ButtonGroupRow label="Sliders in the editor" options={['RGB', 'CMY', 'HSV']} value={(w.model ?? 'rgb').toUpperCase()}
+        onChange={(v) => update({ model: v.toLowerCase() })} />
+      <div style={{ padding: '8px 12px', fontSize: 11, color: '#555', lineHeight: 1.5 }}>
+        Tap a colour to pick it, hold it (or right-click) to edit it. Each one puts out three cells: R, G, B.
+      </div>
+    </>
+  );
 }
 
 // ─── Main sidebar component ───────────────────────────────────────────────────
@@ -430,9 +558,9 @@ export default function LiveSidebar(): React.JSX.Element {
   };
 
   return (
+    <ResizableColumn base={248}>
     <div style={{
-      width: 248,
-      flexShrink: 0,
+      width: '100%', height: '100%',
       background: '#090909',
       borderLeft: '1px solid #1a1a1a',
       display: 'flex',
@@ -476,5 +604,6 @@ export default function LiveSidebar(): React.JSX.Element {
         />
       )}
     </div>
+    </ResizableColumn>
   );
 }

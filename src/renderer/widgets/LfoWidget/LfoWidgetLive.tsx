@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 import { dispatchValue } from '../../ipc/dispatch';
 import { bridge } from '../../ipc/bridge';
 import { addLane, LaneBar } from '../base/phaseLanes';
-import { getParamInput, freqFromInput, onParamInputs, LFO_SPEEDS, LFO_INPUTS } from '../base/paramInputs';
+import { getParamInput, freqFromInput, onParamInputs, LFO_SPEEDS, LFO_INPUTS, quantSteps } from '../base/paramInputs';
 import CellLinkMenu from '../base/CellLinkMenu';
 import { createPortal } from 'react-dom';
 export { addLane, removeLane, setLanePhase } from '../base/phaseLanes';
@@ -102,13 +102,17 @@ export default function LfoWidgetLive({ widget }: { widget: LfoWidget }): React.
       // where it is instead of jumping to another point of it.
       const inp = (k: string) => getParamInput(w.id, k);
       const freqIn = inp('freq');
+      const cyclesPerMs = freqIn !== undefined ? freqFromInput(freqIn) / 1000
+        : (w.rateMode === 'bpm'
+          ? (masterBpmRef.current / 60000) / Math.max(0.001, w.rateMultiplier)
+          : w.rateHz / 1000) * (w.speed ?? 1);
       if (running && dt > 0 && dt < 300) {
-        const cyclesPerMs = freqIn !== undefined ? freqFromInput(freqIn) / 1000
-          : (w.rateMode === 'bpm'
-            ? (masterBpmRef.current / 60000) / Math.max(0.001, w.rateMultiplier)
-            : w.rateHz / 1000) * (w.speed ?? 1);
         accBeatsRef.current += dt * cyclesPerMs;   // cycles
       }
+      // QUANTIZE: sample the wave in N steps per cycle and hold between them.
+      // At the top, one step per cycle: a new value at the start of every cycle
+      // (a different one each time on Noise), held still until the next.
+      const steps = quantSteps(inp('quant') ?? w.quantize ?? 0);
       const amp = inp('amp') ?? w.amplitude;
       const center = w.center ?? 0.5;
       const biasIn = inp('bias');
@@ -132,7 +136,8 @@ export default function LfoWidgetLive({ widget }: { widget: LfoWidget }): React.
           }
           raw = randomValRef.current[i] ?? 0.5;
         } else {
-          raw = computeLfoValue(w.waveform, phase, bias, w.seed ? w.seed * 7.919 : seedOf(w.id));
+          const ph = steps === Infinity ? phase : Math.floor(phase * steps) / steps;
+          raw = computeLfoValue(w.waveform, ph, bias, w.seed ? w.seed * 7.919 : seedOf(w.id));
         }
 
         // Apply amplitude and offset: centre at offset, swing ±amplitude/2
@@ -140,7 +145,7 @@ export default function LfoWidgetLive({ widget }: { widget: LfoWidget }): React.
 
         // While stopped the value only moves when you move a control, so emit on
         // change instead of flooding the wire with an unchanging number.
-        if (running || value !== lastSentRef.current[i]) {
+        if ((running && steps === Infinity) || value !== lastSentRef.current[i]) {
           lastSentRef.current[i] = value;
           useStore.getState().setCellValue(w.id, i, value);
           if (i === 0 && w.mapping) dispatchValue(w.mapping, value);

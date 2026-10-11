@@ -25,7 +25,7 @@ export default function Toolbar(): React.JSX.Element {
 
   return (
     <div style={styles.bar}>
-      <span style={styles.logo}>LiveForge</span>
+      <span style={styles.logo}>Maestrale</span>
 
       <div style={styles.group}>
         <ToolBtn onClick={openWidgetPicker}>+ Widget</ToolBtn>

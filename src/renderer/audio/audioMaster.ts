@@ -1,4 +1,4 @@
-// The audio master: one gain for every sound LiveForge plays — Sound Player
+// The audio master: one gain for every sound Maestrale plays — Sound Player
 // tracks and timeline audio. Set by Audio Level widgets in OUT mode (through
 // MasterEngine, across pages); 1 when there is none.
 

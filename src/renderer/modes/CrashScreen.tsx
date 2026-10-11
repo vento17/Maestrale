@@ -3,7 +3,7 @@ import React from 'react';
 import { useStore } from '../store';
 import { bridge } from '../ipc/bridge';
 
-interface State { error: Error | null }
+interface State { error: Error | null; where: string }
 
 /**
  * Catches a render error in the mode content.
@@ -16,15 +16,18 @@ interface State { error: Error | null }
  * so Save, page switching and Settings still work while the boundary is up.
  */
 export default class CrashScreen extends React.Component<{ children: React.ReactNode }, State> {
-  state: State = { error: null };
+  state: State = { error: null, where: '' };
 
   static getDerivedStateFromError(error: Error): State {
-    return { error };
+    return { error, where: '' };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     // Into the in-app log, so it is readable without opening devtools.
     useStore.getState().addLog('error', `crash: ${error.message}`);
+    // Which widget / screen it was — shown under the message, so a screenshot says it all.
+    const where = (info.componentStack ?? '').split('\n').map((l) => l.trim().replace(/^at /, '').split(' ')[0]).filter(Boolean).slice(0, 4).join(' ‹ ');
+    this.setState({ where });
     if (info.componentStack) {
       useStore.getState().addLog('error', info.componentStack.split('\n').slice(0, 4).join(' ').trim());
     }
@@ -51,13 +54,13 @@ export default class CrashScreen extends React.Component<{ children: React.React
           </div>
           <div style={{ fontSize: 14, color: '#b0b0b0', lineHeight: 1.55, marginBottom: 14 }}>
             Your project is still in memory and is being auto-saved. Save it to a
-            file now, then go back to Config.
+            file now, then go back to Edit.
           </div>
           <pre style={{
             background: '#141414', border: '1px solid #2a2a2a', borderRadius: 5,
             padding: '10px 12px', fontSize: 12, color: pal('#e6a66f'),
             whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 18px',
-          }}>{error.message}</pre>
+          }}>{error.message}{this.state.where ? `\nin ${this.state.where}` : ''}</pre>
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               style={{ ...btn, background: `var(--color-accent, ${pal('#91ced2')})`, border: `1px solid var(--color-accent, ${pal('#91ced2')})`, color: '#000', fontWeight: 700 }}
@@ -67,9 +70,9 @@ export default class CrashScreen extends React.Component<{ children: React.React
             </button>
             <button
               style={{ ...btn, background: 'none', border: '1px solid #3a3a3a', color: '#ccc' }}
-              onClick={() => { useStore.getState().setMode('design'); this.setState({ error: null }); }}
+              onClick={() => { useStore.getState().setMode('design'); this.setState({ error: null, where: '' }); }}
             >
-              Back to Config
+              Back to Edit
             </button>
           </div>
         </div>

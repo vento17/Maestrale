@@ -29,7 +29,7 @@ export interface WidgetStyle {
 
 // ─── Widget Types ─────────────────────────────────────────────────────────────
 
-export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor';
+export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor' | 'encoder' | 'etc' | 'shell' | 'palette' | 'merge';
 
 // ─── Widget Base ──────────────────────────────────────────────────────────────
 
@@ -124,6 +124,10 @@ export interface XYPadWidget extends WidgetBase {
   // More dots on the same pad (＋): dot k+2 is cells 2(k+1) (X) and 2(k+1)+1 (Y).
   // Dot 1 uses mappingX / mappingY above.
   points?: XYPoint[];
+  // A vertical slider at the right edge (a camera's Z, a zoom…): one more cell,
+  // the last one (after every dot's X / Y). Starts at the middle.
+  zSlider?: boolean;
+  mappingZ?: Mapping;
 }
 
 export interface XYPoint {
@@ -136,6 +140,7 @@ export interface XYPoint {
 
 // Mapping of an XY pad cell: even = X, odd = Y of dot ⌊cell/2⌋.
 export function xyMapping(w: XYPadWidget, cell: number): Mapping {
+  if (w.zSlider && cell === 2 * (1 + (w.points?.length ?? 0))) return w.mappingZ ?? null;
   const dot = Math.floor(cell / 2);
   const p = dot === 0 ? { mappingX: w.mappingX, mappingY: w.mappingY } : w.points?.[dot - 1];
   if (!p) return null;
@@ -370,6 +375,9 @@ export interface CueData {
   // transports are left alone.
   play?: Record<string, boolean>;
   links?: Record<string, RouterRow[]>; // routerWidgetId → its rows at save time (link/routing state); absent on pre-feature cues
+  // widgetId → what a generator IS at save time: a Sketch's drawing and dots,
+  // an LFO's shape and rate, a sequencer's steps, a graph's curve. Snaps on recall.
+  content?: Record<string, Record<string, unknown>>;
 }
 
 export interface CuesWidget extends WidgetBase {
@@ -379,6 +387,7 @@ export interface CuesWidget extends WidgetBase {
   // widget on every page unless you deliberately narrow it.
   scopePageId?: string;    // page id, or 'all'
   scopeWidgetId?: string;  // widget id, or 'all'
+  excludeIds?: string[];   // left out of what the scope covers
   navFirst:  Mapping;
   navPrev:   Mapping;
   navNext:   Mapping;
@@ -416,6 +425,7 @@ export interface SubmastersWidget extends WidgetBase {
   spacingY: number;
   mergeMode: SubmasterMergeMode;
   linkedWidgetIds: string[];   // widgets this submaster controls
+  excludeWidgetIds?: string[]; // left out, even when "all widgets" is linked
   scenes: SubmasterScene[];    // length = countX
 }
 
@@ -472,6 +482,16 @@ export interface RouterOutput {
   inMax?: number;
   outMin?: number;
   outMax?: number;
+  // Motion filters on the way out (Router page, right of the line):
+  // SMOOTH glides to each new value (0–1 → ~0.02…1.5 s); SPRING follows with a
+  // bounce (0 = no overshoot … 1 = very springy). Both on = smooth, then spring.
+  smoothOn?: boolean;
+  smooth?: number;
+  // Which way the smoothing acts: 'in' = only rising (attack), 'out' = only
+  // falling (release), 'both' (default).
+  smoothDir?: 'in' | 'both' | 'out';
+  springOn?: boolean;
+  spring?: number;
 }
 
 export interface RouterRow {
@@ -602,6 +622,9 @@ export interface LfoWidget extends WidgetBase {
   // Noise: which random pattern. Same seed = same curve, every time (1–9999).
   // 0 / missing = derived from the widget, so two noises never match.
   seed?: number;
+  // 0 = smooth. Higher = the wave is sampled in fewer steps per cycle and held
+  // still between them (64 steps … 2). 1 = one trigger per cycle.
+  quantize?: number;
 }
 
 // ─── Math / Merge Widget ──────────────────────────────────────────────────────
@@ -727,7 +750,52 @@ export type Widget =
   | ClockWidget
   | DmxMonitorWidget
   | AudioLevelWidget
-  | SketchWidget;
+  | EncoderWidget
+  | EtcWidget
+  | SketchWidget
+  | ShellWidget
+  | PaletteWidget
+  | MergeWidget;
+
+// ─── Shell ────────────────────────────────────────────────────────────────────
+// Buttons that run an action on the PC (turn off, restart, open a file…). Each
+// button is an input cell: a rising edge (a clock row, a cue, MIDI) fires it,
+// like pressing it.
+export interface ShellButton {
+  id: string;
+  label: string;
+  action: string;      // SHELL_ACTIONS id
+  arg?: string;        // path / address / command line
+  delay?: number;      // power actions: seconds of countdown (default 10)
+}
+export interface ShellWidget extends WidgetBase {
+  kind: 'shell';
+  buttons: ShellButton[];
+}
+
+// ─── Palette ──────────────────────────────────────────────────────────────────
+// Colour swatches. Every colour puts out three cells (R, G, B 0–1): colour k is
+// cells 3k, 3k+1, 3k+2. Tapping a swatch selects it (and "touches" its cells,
+// which an LTP Merge takes as the latest).
+export interface PaletteWidget extends WidgetBase {
+  kind: 'palette';
+  colors: string[];    // '#rrggbb'
+  cols: number;        // swatches per row
+  model?: 'rgb' | 'cmy' | 'hsv';   // sliders in the colour editor
+}
+
+// ─── Merge ────────────────────────────────────────────────────────────────────
+// Takes any number of inputs (drop cables on its box: in 1, in 2…) at NEGATIVE
+// cell indices, groups them `every` at a time (3 = R G B of each colour) and
+// merges the groups slot by slot: HTP (highest), LTP (latest group touched),
+// lowest or average. Out k = cell k-1. `smooth` = seconds to glide to a new value.
+export type MergeMode = 'htp' | 'ltp' | 'min' | 'avg';
+export interface MergeWidget extends WidgetBase {
+  kind: 'merge';
+  mode: MergeMode;
+  every: number;       // group size = number of outputs (1–16)
+  smooth: number;      // seconds
+}
 
 // ─── Sketch ───────────────────────────────────────────────────────────────────
 // Draw lines on the pad; on play, dots run along them one stroke after the
@@ -752,7 +820,7 @@ export interface SketchWidget extends WidgetBase {
 }
 
 // ─── Audio Level ──────────────────────────────────────────────────────────────
-// OUT: a master fader for every sound LiveForge plays (Sound Player, timeline
+// OUT: a master fader for every sound Maestrale plays (Sound Player, timeline
 // audio) — cells[0] is the gain, so it can be linked/automated.
 // IN: a meter of the audio input — cells[0] is the level 0–1 (−60…0 dB), a
 // source to link anywhere.
@@ -763,9 +831,60 @@ export interface AudioLevelWidget extends WidgetBase {
   orientation?: 'vertical' | 'horizontal';
 }
 
+// ─── Encoder ──────────────────────────────────────────────────────────────────
+// Endless encoders that send CHANGES (+3, −1…), never absolute values — like the
+// wheels on a lighting desk. The desk keeps the real value, so there is nothing
+// to jump from: turning here always continues from where the desk is.
+export type EncoderFormat = 'oscDelta' | 'oscText' | 'oscIncDec' | 'midi';
+export type EncoderMidiMode = 'offset64' | 'twos' | 'signBit';
+
+export interface EncoderDef {
+  id: string;
+  label: string;
+  address: string;      // oscDelta / oscText: where; oscIncDec: the "up" address
+  addressDec?: string;  // oscIncDec: the "down" address
+  text?: string;        // oscText: the string sent — {d} = +3 / -3, {abs} = 3, {dir} = + / -
+  midiChannel?: number; // midi: 1–16
+  midiCc?: number;      // midi: 0–127
+}
+
+export interface EncoderWidget extends WidgetBase {
+  user?: number;             // Eos user (0 = the same as the console)
+  kind: 'encoder';
+  encoders: EncoderDef[];
+  format: EncoderFormat;
+  argType?: 'f' | 'i';       // oscDelta: float or integer argument
+  step: number;              // amount sent per tick (oscDelta / oscText)
+  ticksPerTurn: number;      // how many ticks one full turn of the knob gives
+  acceleration: number;      // 0 = none … 1 = turning fast sends a lot more
+  midiMode?: EncoderMidiMode;
+  invert?: boolean;
+  outputId?: string;         // OSC / MIDI output ('' / missing = the main one)
+}
+
+// ─── ETC (Eos Gio @5 surface) ─────────────────────────────────────────────────
+// Every key of a Gio @5 laid out like the desk, sending Eos OSC: keys as
+// <keyPrefix>/<name> (1 down, 0 up), the four encoders as relative ticks, the
+// two masters as levels. Cells 0–1 are the master faders (linkable).
+export interface EtcWidget extends WidgetBase {
+  kind: 'etc';
+  keyPrefix: string;                       // '/eos/key'
+  keyOverrides?: Record<string, string>;   // key id → other name, or a full '/address'
+  encoderAddress: string;                  // '/eos/active/wheel/fine/{n}'
+  ticksPerTurn: number;
+  acceleration: number;
+  faderAddresses: [string, string];        // the two masters
+  levelWheelAddress?: string;              // the vertical level wheel ('/eos/wheel/level')
+  hideOsc?: boolean;                       // hide the small OSC names on the keys
+  user?: number;                           // Eos user (0 = the same as the console)
+  gmAddress?: string;                      // Grandmaster: the Eos fader it sits on, '/eos/fader/<page>/<fader>'
+  wheelGain?: Record<string, number>;      // per parameter name ("Zoom"): ticks × this
+  outputId?: string;
+}
+
 // ─── DMX Monitor ──────────────────────────────────────────────────────────────
 // A grid of channels showing a universe: what arrives (Art-Net in) or what
-// LiveForge sends (Art-Net / sACN out). Black = 0, white = 255. Read-only.
+// Maestrale sends (Art-Net / sACN out). Black = 0, white = 255. Read-only.
 
 export interface DmxMonitorWidget extends WidgetBase {
   kind: 'dmxMonitor';
@@ -805,7 +924,7 @@ export interface ClockWidget extends WidgetBase {
 export interface DmxRecorderWidget extends WidgetBase {
   kind: 'dmxRecorder';
   universes: string;        // "0, 1, 4-6" — empty records every universe heard
-  // What it records: an input, or what LiveForge itself sends (default Art-Net in).
+  // What it records: an input, or what Maestrale itself sends (default Art-Net in).
   source?: 'artnet' | 'sacn' | 'out-artnet' | 'out-sacn' | 'out-enttec';
 }
 
@@ -892,7 +1011,7 @@ export interface ArtNetInputConnection {
   enabled: boolean;
   bindHost?: string;   // local interface IP to listen on; '' / undefined = all
   // Universes announced to ArtPoll, so senders in unicast mode (MadMapper
-  // "Use Unicast", consoles) find LiveForge in their node list. "0-3", "0, 5".
+  // "Use Unicast", consoles) find Maestrale in their node list. "0-3", "0, 5".
   universes?: string;
 }
 
@@ -950,8 +1069,14 @@ export interface Project {
   // The other two transport buttons in the top bar. Optional so projects saved
   // before they existed still load.
   playTriggerMapping?: Mapping | null;
-  // Installations: go straight to Live when LiveForge starts with this project.
-  startInLive?: boolean;
+  // Installations: go straight to Live when Maestrale starts with this project.
+  startInLive?: boolean;           // missing = on (installations boot into Live)
+  // Which protocols were connected (Connect pressed) — reopened the same way.
+  // Missing = an older project: everything configured connects.
+  connected?: Record<string, boolean>;
+  // Interface colours (Settings → Palette). Travel with the project, so it opens
+  // the same on any PC. Missing = the default palette.
+  palette?: { accent: string; highlight: string };
   stopTriggerMapping?: Mapping | null;
   // Project-wide frame rate. Timelines read their ruler in frames against this
   // unless they carry their own timecode rate.

@@ -1,3 +1,4 @@
+import { eosAddress } from '../widgets/base/eosUser';
 import { bridge } from './bridge';
 import type { Mapping } from '../../shared/types/mapping';
 
@@ -51,7 +52,7 @@ export function dispatchValue(mapping: Mapping, value: number): void {
       const oscVal = (mapping.minValue !== undefined && mapping.maxValue !== undefined)
         ? v * (mapping.maxValue - mapping.minValue) + mapping.minValue
         : v;
-      bridge.send('tr:osc:send', { address: mapping.address, args: [{ type: 'f', value: oscVal }], outputId: mapping.outputId });
+      bridge.send('tr:osc:send', { address: eosAddress(mapping.address, mapping.user), args: [{ type: 'f', value: oscVal }], outputId: mapping.outputId });
       break;
     }
     case 'artnet': {

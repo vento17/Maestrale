@@ -123,7 +123,7 @@ export class DmxTakeService {
 
   // Which input the take records (Art-Net or sACN — they number universes
   // differently, so one take holds one of them).
-  // Inputs (artnet / sacn) or LiveForge's own outputs (out-…).
+  // Inputs (artnet / sacn) or Maestrale's own outputs (out-…).
   private recProtocol: DmxRecSource = 'artnet';
   isRecording(): boolean { return this.rec !== null; }
 

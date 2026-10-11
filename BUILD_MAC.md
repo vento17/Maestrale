@@ -1,6 +1,6 @@
-# LiveForge on macOS
+# Maestrale on macOS
 
-LiveForge is an Electron + React app. It was developed and packaged on Windows.
+Maestrale is an Electron + React app. It was developed and packaged on Windows.
 On a Mac you can **run it in development mode** right away; producing a
 distributable **`.dmg`** needs a bit of porting work (see the last section).
 
@@ -27,14 +27,14 @@ input is Windows-only (its macOS equivalent is **Syphon**, not yet ported).
 
 ## 2. Get the source
 
-Do **not** copy the `LiveForgeExe*` folders — those are Windows binaries.
+Do **not** copy the `MaestraleExe*` folders — those are Windows binaries.
 
 Either clone the repo:
 ```bash
-git clone <repo-url> LiveForge
-cd LiveForge
+git clone <repo-url> Maestrale
+cd Maestrale
 ```
-…or unzip the shared `LiveForge` folder **without** `node_modules/`, `out/`,
+…or unzip the shared `Maestrale` folder **without** `node_modules/`, `out/`,
 and `build/sidecar_dist/` (those are platform-specific and get regenerated).
 
 ---

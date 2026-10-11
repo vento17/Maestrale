@@ -32,7 +32,7 @@ export function cellCount(widget: Widget): number {
     case 'sliderBank':     return widget.countX * widget.countY;
     case 'buttonGrid':     return widget.countX * widget.countY;
     case 'knobBank':       return widget.countX * widget.countY;
-    case 'xyPad':          return 2 * (1 + (widget.points?.length ?? 0));
+    case 'xyPad':          return 2 * (1 + (widget.points?.length ?? 0)) + (widget.zSlider ? 1 : 0);
     case 'stepSequencer':  return 1;
     case 'graphWidget':    return 1 + (widget.lanes?.length ?? 0);
     // 0..countX-1 = faders, countX..2*countX-1 = the flash buttons under them.
@@ -63,6 +63,11 @@ export function cellCount(widget: Widget): number {
     case 'dmxPlayer':      return widget.items.length;   // one trigger per item
     case 'clock':          return widget.alarms.length;  // one trigger output per alarm
     case 'dmxMonitor':     return 0;  // read-only view
+    case 'encoder':        return 0;  // sends changes only — no value to link
+    case 'shell':          return widget.buttons.length;      // input triggers
+    case 'palette':        return 3 * widget.colors.length;   // R G B per colour
+    case 'merge':          return Math.max(1, Math.min(16, widget.every || 1));
+    case 'etc':            return 5;  // 2 masters + Grandmaster + GO + STOP
   }
 }
 

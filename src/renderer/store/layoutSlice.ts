@@ -11,7 +11,7 @@ const KIND_LABEL_PREFIX: Partial<Record<WidgetKind, string>> = {
   stepSequencer: 'seq', graphWidget: 'graph', cues: 'cues', timeline: 'timeline',
   spoutInput: 'spout', ndiInput: 'ndi', submasters: 'sub', router: 'router',
   imageWidget: 'image', textWidget: 'text', masterLevel: 'master', audioLevel: 'audio', noiseWidget: 'noise', sketch: 'sketch', instance: 'instance',
-  lfoWidget: 'lfo', mathWidget: 'math',
+  lfoWidget: 'lfo', mathWidget: 'math', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge',
   manual: 'manual', keyboard: 'keys', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', dmxMonitor: 'monitor',
 };
 
@@ -110,6 +110,7 @@ export interface LayoutSlice {
   // A widget lost cell `index` (an alarm deleted, a row removed): links on that
   // cell go, links on later cells move down one so they keep their target.
   dropCellAndShiftLinks: (widgetId: string, index: number) => void;
+  moveCellLinks: (widgetId: string, from: number, to: number) => void;
   applyLinksSnapshot: (links: Record<string, RouterRow[]>) => void;
 
   // History & clipboard
@@ -682,6 +683,16 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
       });
     }
     touchUpdatedAt(s.project);
+  }),
+
+  // Links on one cell move to another index (an XY pad's Z when a dot is added).
+  moveCellLinks: (widgetId, from, to) => set((s) => {
+    for (const r of eachRouter(s.project)) {
+      for (const row of r.holder.rows) {
+        if (row.widgetId === widgetId && (row.inputType ?? 'widget') === 'widget' && !row.allCells && row.cellIndex === from) row.cellIndex = to;
+        for (const o of row.outputs) if (o.targetWidgetId === widgetId && !o.targetAllCells && (o.targetCellIndex ?? 0) === from) o.targetCellIndex = to;
+      }
+    }
   }),
 
   addMainRouterLink: () => {

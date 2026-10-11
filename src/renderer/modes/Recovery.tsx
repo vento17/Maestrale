@@ -1,3 +1,4 @@
+import { markSaved, isSaved, isDiscarding } from '../store/savedMark';
 import { pal } from '../palette';
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
@@ -37,14 +38,15 @@ export default function Recovery(): React.JSX.Element | null {
     checked.current = true;
     // Start where we left off, without asking: the last saved / opened project
     // (or, if nothing was ever saved, the autosave). An installation PC with
-    // LiveForge in its startup apps boots straight into its show.
+    // Maestrale in its startup apps boots straight into its show.
     bridge.invoke('tr:project:openLast', undefined as never)
       .then((found) => {
         if (!found) return;
         const st = useStore.getState();
         st.loadProject(found.project);
-        if (found.project.startInLive) st.setMode('live');
-        st.addLog('info', found.from === 'saved' ? `Opened ${found.path}` : 'Opened the last autosave');
+        if (found.from === 'saved') markSaved(useStore.getState().project);
+        if (found.project.startInLive !== false) st.setMode('live');
+        st.addLog('info', found.from === 'saved' ? `Opened ${found.path}` : found.from === 'resumed' ? `Reopened ${found.path} as it was left (changes not saved yet)` : 'Opened the last autosave');
       })
       .catch(() => {})
       .finally(() => setReady(true));
@@ -75,9 +77,29 @@ export default function Recovery(): React.JSX.Element | null {
     return () => { if (quiet.current) clearTimeout(quiet.current); };
   }, [project, ready]);
 
+  // Connection settings and Connect / Disconnect are written into the project's
+  // file at once (main patches just those fields), so ports, IPs and what was
+  // connected survive even "Close without saving". If that was the only change,
+  // the project still counts as saved.
+  const prevProj = useRef<Project | null>(null);
+  useEffect(() => {
+    const prev = prevProj.current;
+    prevProj.current = project;
+    if (!ready || !prev || prev.id !== project.id) return;
+    if (prev.connections === project.connections && prev.connected === project.connected) return;
+    const onlyConn = (Object.keys({ ...prev, ...project }) as (keyof Project)[])
+      .every((k) => k === 'connections' || k === 'connected' || k === 'updatedAt' || prev[k] === project[k]);
+    if (onlyConn && isSaved(prev)) markSaved(project);
+    bridge.invoke('tr:project:patchConnections', { connections: project.connections, connected: project.connected }).catch(() => {});
+  }, [project, ready]);
+
   // A last write on the way out catches whatever the timers had not flushed.
   useEffect(() => {
-    const flush = () => { bridge.send('tr:project:autosave', useStore.getState().project); };
+    const flush = () => {
+      const p = useStore.getState().project;
+      if (isDiscarding() || isSaved(p)) return;
+      bridge.send('tr:project:autosave', p);
+    };
     window.addEventListener('beforeunload', flush);
     return () => window.removeEventListener('beforeunload', flush);
   }, []);
@@ -102,7 +124,7 @@ export default function Recovery(): React.JSX.Element | null {
           Unsaved work recovered
         </div>
         <div style={{ fontSize: 14, color: '#b0b0b0', lineHeight: 1.55, marginBottom: 18 }}>
-          LiveForge closed with changes that were never saved to a file.
+          Maestrale closed with changes that were never saved to a file.
           <div style={{ marginTop: 10, fontFamily: 'monospace', fontSize: 13, color: '#ddd' }}>
             {offer.project.name || 'untitled'}
             <span style={{ color: '#777' }}>

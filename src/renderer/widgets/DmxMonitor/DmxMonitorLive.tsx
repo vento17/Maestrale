@@ -8,7 +8,7 @@ import { onDmxInputStatus, getSeenSources } from '../../ipc/dmxInput';
 
 // A universe as a grid of squares: channel number in each, black at 0, white
 // at 255. IN shows what arrives (optionally from one sender), OUT what
-// LiveForge sends (optionally to one destination). Drawn on a canvas so a
+// Maestrale sends (optionally to one destination). Drawn on a canvas so a
 // 64 × 32 grid at 20 Hz costs nothing. When the grid holds fewer than 512
 // channels a scrollbar on the right moves through the universe.
 

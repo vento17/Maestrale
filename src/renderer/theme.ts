@@ -1,5 +1,5 @@
 import { pal, onPalette } from './palette';
-// LiveForge palette: black / greys / white + laguna (desaturated sea green,
+// Maestrale palette: black / greys / white + laguna (desaturated sea green,
 // leaning blue) + fire orange. Red only where it means "recording" or a clock.
 const make_AQUA = () => (pal('#4fb3b8'));
 export let AQUA = make_AQUA();

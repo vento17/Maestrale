@@ -1,7 +1,7 @@
 {
   "name": "liveforge",
-  "version": "0.3.0",
-  "description": "Modular touch controller builder for live use",
+  "version": "0.4.0",
+  "description": "Modular touch controller builder for live shows",
   "author": "vento17",
   "license": "GPL-3.0-or-later",
   "main": "./out/main/index.js",
@@ -15,9 +15,9 @@
   },
   "build": {
     "appId": "com.vento.liveforge",
-    "productName": "LiveForge",
+    "productName": "Maestrale",
     "directories": {
-      "output": "../LiveForgeExe"
+      "output": "../MaestraleExe"
     },
     "files": [
       "out/**/*"

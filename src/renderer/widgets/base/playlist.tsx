@@ -39,7 +39,7 @@ export function FadeButton({ value, onChange, color, fs }: { value: number; onCh
   const w = Math.max(38, fs * 3.2), h = Math.max(20, fs * 1.6);
   if (edit !== null) {
     return (
-      <input autoFocus value={edit} onChange={(e) => setEdit(e.target.value)}
+      <input autoFocus onFocus={(e) => e.currentTarget.select()} value={edit} onChange={(e) => setEdit(e.target.value)}
         onPointerDown={(e) => e.stopPropagation()}
         onBlur={() => { const n = Number(edit.replace(',', '.').replace(/s$/, '')); if (Number.isFinite(n)) onChange(Math.max(0, Math.min(600, n))); setEdit(null); }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEdit(null); }}

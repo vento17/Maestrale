@@ -62,7 +62,7 @@ export class SacnService {
   }
 
   // Every universe any output has touched — the DMX recorder samples these
-  // when it records LiveForge's own output.
+  // when it records Maestrale's own output.
   universesInUse(): number[] {
     const set = new Set<number>();
     for (const o of this.outputs.values()) for (const u of o.universes.keys()) set.add(u);
@@ -148,7 +148,7 @@ export class SacnService {
     // ── Framing layer (bytes 38–114) ─────────────────────────────────────────
     buf.writeUInt16BE(0x7000 | (88 + N), 38);  // Flags+Length
     buf.writeUInt32BE(0x00000002, 40);          // Vector: VECTOR_E131_DATA_PACKET
-    buf.write('LiveForge', 44, 'utf8');         // Source Name (64 bytes, rest = 0)
+    buf.write('Maestrale', 44, 'utf8');         // Source Name (64 bytes, rest = 0)
     buf[108] = this.defaultPriority;            // Priority
     // Synchronization Address [109–110]: 0 (no sync)
     buf[111] = this.seq = (this.seq + 1) & 0xff; // Sequence Number

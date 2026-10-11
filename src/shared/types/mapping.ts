@@ -23,6 +23,10 @@ export interface MidiMapping {
 export interface OscMapping {
   type: 'osc';
   address: string;       // e.g. "/touchrig/fader/1"
+  // Eos user: 1… makes this message come from its own user on the desk, so it
+  // does not fight the operator's selection ("/eos/..." → "/eos/user/<n>/...").
+  // 0 / missing = the same user as the console.
+  user?: number;
   args?: OscArgType[];   // fixed args prepended before value
   minValue?: number;     // if set, rescale value: out = v*(max-min)+min
   maxValue?: number;

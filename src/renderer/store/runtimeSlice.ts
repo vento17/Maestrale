@@ -25,6 +25,15 @@ export interface RuntimeSlice {
   applyFeedback: (widgetId: string, cellIndex: number, color: string | null, label: string | null) => void;
 }
 
+// A palette's cells: R, G, B (0–1) of each colour.
+export function paletteValues(colors: string[]): number[] {
+  return colors.flatMap((c) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(c.trim());
+    const n = m ? parseInt(m[1], 16) : 0;
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  });
+}
+
 function makeCell(): CellRuntime {
   return { value: 0, active: false, feedbackColor: null, feedbackLabel: null };
 }
@@ -35,6 +44,10 @@ function makeWidgetRuntime(widget: Widget): WidgetRuntime {
   // A master starts at full (1) — 0 would mute everything on its protocol.
   if (widget.kind === 'masterLevel' && cells[0]) cells[0].value = 1;
   if (widget.kind === 'audioLevel' && widget.mode === 'out' && cells[0]) cells[0].value = 1;
+  // Faders start at full; GO and STOP are triggers, so they start at rest.
+  if (widget.kind === 'etc') cells.forEach((c, i) => { c.value = i < 3 ? 1 : 0; });
+  if (widget.kind === 'xyPad') cells.forEach((c) => { c.value = 0.5; });  // dots and Z start in the middle
+  if (widget.kind === 'palette') paletteValues(widget.colors).forEach((v, i) => { if (cells[i]) cells[i].value = v; });
   return { widgetId: widget.id, cells };
 }
 
@@ -51,7 +64,10 @@ export const createRuntimeSlice: StateCreator<StoreState, [['zustand/immer', nev
     for (const widget of widgets) {
       const count = cellCount(widget);
       const existing = prev[widget.id];
-      if (existing) {
+      if (existing && widget.kind === 'palette') {
+        // Palette cells ARE its colours: always rebuilt from them.
+        next[widget.id] = { ...makeWidgetRuntime(widget), playing: existing.playing };
+      } else if (existing) {
         next[widget.id] = {
           widgetId: widget.id,
           playing: existing.playing,
@@ -59,7 +75,7 @@ export const createRuntimeSlice: StateCreator<StoreState, [['zustand/immer', nev
             const c = existing.cells[i];
             return c
               ? { value: c.value, active: c.active, feedbackColor: c.feedbackColor, feedbackLabel: c.feedbackLabel }
-              : makeCell();
+              : { ...makeCell(), value: widget.kind === 'xyPad' ? 0.5 : 0 };
           }),
         };
       } else {

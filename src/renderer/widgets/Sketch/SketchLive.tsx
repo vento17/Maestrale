@@ -93,9 +93,15 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
   const draftRef = useRef<number[] | null>(null);
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
+  const dirRef = useRef<1 | -1>(1);
+  const [dir, setDir] = useState<1 | -1>(1);
   const posRef = useRef(0);                 // 0–1 along the drawing (dot 1)
   const [, setFrame] = useState(0);
   const [hoverStroke, setHoverStroke] = useState<string | null>(null);
+  // Alt = delete (red), Shift = move, Ctrl = scale around its centre (orange).
+  const [hoverMode, setHoverMode] = useState<'del' | 'edit'>('del');
+  const editRef = useRef<{ id: string; mode: 'move' | 'scale'; start: [number, number]; orig: number[]; c: [number, number]; pts?: number[] } | null>(null);
+  const [editPts, setEditPts] = useState<{ id: string; pts: number[] } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; cell: number } | null>(null);
   const liveSpeed = useRef<number | null>(null);
   useEffect(() => {
@@ -143,9 +149,15 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
     });
   };
 
-  const start = () => { playingRef.current = true; setPlaying(true); };
+  // Which way the dots run: 1 forward, −1 backwards (the ◀ button).
+  const start = (d: 1 | -1 = 1) => { dirRef.current = d; setDir(d); playingRef.current = true; setPlaying(true); };
   const stop = () => { playingRef.current = false; setPlaying(false); };
-  const reset = () => { posRef.current = 0; emit(); setFrame((f) => f + 1); };
+  // Back to the start — or to the end, when it is running backwards.
+  const reset = () => {
+    const w = widgetRef.current;
+    posRef.current = dirRef.current > 0 ? 0 : (w.loop ? (w.pingPong ? 2 : 1) : 1 + (Math.max(1, w.dots || 1) - 1) * (w.delay ?? 0));
+    emit(); setFrame((f) => f + 1);
+  };
 
   // Run loop.
   useEffect(() => {
@@ -157,10 +169,15 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
       const w = widgetRef.current;
       if (playingRef.current && pathRef.current.total > 0) {
         const speed = liveSpeed.current ?? (w.speed ?? 1);
-        posRef.current += (dt / Math.max(0.1, w.duration || 4)) * speed;
+        posRef.current += (dt / Math.max(0.1, w.duration || 4)) * speed * dirRef.current;
         const end = 1 + (w.loop ? 0 : (Math.max(1, w.dots || 1) - 1) * (w.delay ?? 0));
-        if (!w.loop && posRef.current >= end) { posRef.current = end; stop(); }
-        if (w.loop) posRef.current %= w.pingPong ? 2 : 1;
+        if (!w.loop) {
+          if (posRef.current >= end) { posRef.current = end; stop(); }
+          else if (posRef.current <= 0) { posRef.current = 0; stop(); }
+        } else {
+          const span = w.pingPong ? 2 : 1;
+          posRef.current = ((posRef.current % span) + span) % span;   // wraps both ways
+        }
         emit();
         setFrame((f) => (f + 1) % 1e6);
       }
@@ -223,7 +240,22 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
     const [x, y] = norm(e);
     if (e.altKey) {
       const id = strokeAt(x, y);
-      if (id) save((widgetRef.current.strokes ?? []).filter((s) => s.id !== id));
+      if (id) {
+        useStore.getState().captureHistory();
+        save((widgetRef.current.strokes ?? []).filter((s) => s.id !== id));
+      }
+      return;
+    }
+    if (e.shiftKey || e.ctrlKey) {
+      const id = strokeAt(x, y);
+      const st = (widgetRef.current.strokes ?? []).find((s) => s.id === id);
+      if (!st) return;
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+      for (let i = 0; i + 1 < st.pts.length; i += 2) { x0 = Math.min(x0, st.pts[i]); x1 = Math.max(x1, st.pts[i]); y0 = Math.min(y0, st.pts[i + 1]); y1 = Math.max(y1, st.pts[i + 1]); }
+      editRef.current = { id: st.id, mode: e.shiftKey ? 'move' : 'scale', start: [x, y], orig: st.pts, c: [(x0 + x1) / 2, (y0 + y1) / 2] };
+      setHoverStroke(st.id); setHoverMode('edit');
       return;
     }
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -232,7 +264,29 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
   };
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const [x, y] = norm(e);
-    if (!draftRef.current) { setHoverStroke(e.altKey ? strokeAt(x, y) : null); return; }
+    const ed = editRef.current;
+    if (ed) {
+      const c01 = (v: number) => Math.max(0, Math.min(1, v));
+      let pts: number[];
+      if (ed.mode === 'move') {
+        const dx = x - ed.start[0], dy = y - ed.start[1];
+        pts = ed.orig.map((v, i) => c01(v + (i % 2 ? dy : dx)));
+      } else {
+        // Scale by how far the pointer is from the centre now vs. at the start (in pixels).
+        const dist = (px: number, py: number) => Math.hypot((px - ed.c[0]) * size.w, (py - ed.c[1]) * size.h);
+        const k = Math.max(0.05, dist(x, y) / Math.max(4, dist(ed.start[0], ed.start[1])));
+        pts = ed.orig.map((v, i) => c01(ed.c[i % 2] + (v - ed.c[i % 2]) * k));
+      }
+      ed.pts = pts;
+      setEditPts({ id: ed.id, pts });
+      return;
+    }
+    if (!draftRef.current) {
+      const mod = e.altKey || e.shiftKey || e.ctrlKey;
+      setHoverStroke(mod ? strokeAt(x, y) : null);
+      setHoverMode(e.altKey ? 'del' : 'edit');
+      return;
+    }
     const d = draftRef.current;
     const lx = d[d.length - 2], ly = d[d.length - 1];
     if (Math.hypot((x - lx) * size.w, (y - ly) * size.h) < 3) return;   // a point every 3 px
@@ -241,10 +295,24 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
     setDraft(next);
   };
   const onUp = () => {
+    const ed = editRef.current;
+    if (ed) {
+      editRef.current = null;
+      setEditPts(null);
+      const pts = ed.pts;
+      if (pts) {
+        useStore.getState().captureHistory();
+        save((widgetRef.current.strokes ?? []).map((s) => (s.id === ed.id ? { ...s, pts: pts.map((v) => Math.round(v * 10000) / 10000) } : s)));
+      }
+      return;
+    }
     const d = draftRef.current;
     draftRef.current = null;
     setDraft(null);
-    if (d && d.length >= 2) save([...(widgetRef.current.strokes ?? []), { id: nanoid(), pts: d.map((v) => Math.round(v * 10000) / 10000) }]);
+    if (d && d.length >= 2) {
+      useStore.getState().captureHistory();   // Ctrl+Z puts the line back
+      save([...(widgetRef.current.strokes ?? []), { id: nanoid(), pts: d.map((v) => Math.round(v * 10000) / 10000) }]);
+    }
   };
 
   const color = widget.style.foregroundColor;
@@ -266,9 +334,10 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
       <div style={{ display: 'flex', flexWrap: 'wrap', rowGap: 4, alignItems: 'center', gap: 4, padding: '4px 6px', flexShrink: 0, borderBottom: '1px solid #1e1e1e' }}
         onPointerDown={(e) => e.stopPropagation()}>
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: '#505050' }}>◈ SKETCH</span>
-        <button style={btn(playing)} onClick={start} title="Play — the PLAY input does the same">▶</button>
+        <button style={btn(playing && dir < 0)} onClick={() => start(-1)} title="Play backwards">◀</button>
+        <button style={btn(playing && dir > 0)} onClick={() => start(1)} title="Play — the PLAY input does the same">▶</button>
         <button style={btn(!playing)} onClick={stop} title="Stop">■</button>
-        <button style={btn(false)} onClick={reset} title="Back to the start">⟲</button>
+        <button style={btn(false)} onClick={reset} title="Back to the start (to the end, when it runs backwards)">⟲</button>
         <span style={{ display: 'flex' }}>
           {([['stop', '→|', 'Once: stops at the end', { loop: false, pingPong: false }],
              ['loop', '⟳', 'Loop: starts again from the beginning', { loop: true, pingPong: false }],
@@ -319,7 +388,8 @@ export default function SketchLive({ widget }: { widget: SketchWidget }): React.
               {(widget.smooth ?? 0) > 0 && (
                 <polyline points={poly(s.pts)} fill="none" stroke={color} strokeOpacity={0.18} strokeWidth={1} strokeLinejoin="round" />
               )}
-              <polyline points={poly(smoothed[i]?.pts ?? s.pts)} fill="none" stroke={hoverStroke === s.id ? pal('#e07f2b') : color} strokeOpacity={hoverStroke === s.id ? 1 : 0.6}
+              <polyline points={poly(editPts?.id === s.id ? editPts.pts : (smoothed[i]?.pts ?? s.pts))} fill="none"
+                stroke={hoverStroke === s.id ? (hoverMode === 'edit' ? pal('#e07f2b') : '#e0322b') : color} strokeOpacity={hoverStroke === s.id ? 1 : 0.6}
                 strokeWidth={hoverStroke === s.id ? 3 : 2} strokeLinecap="round" strokeLinejoin="round" />
               {s.pts.length >= 2 && (
                 <text x={s.pts[0] * size.w + 4} y={s.pts[1] * size.h - 4} fill="#777" fontSize={10} fontFamily="monospace">{i + 1}</text>

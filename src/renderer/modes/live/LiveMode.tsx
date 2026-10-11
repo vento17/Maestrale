@@ -4,10 +4,11 @@ import { GLOBAL_BAR_HEIGHT } from '../GlobalBar';
 import LiveCanvas from './LiveCanvas';
 import LiveSidebar from './LiveSidebar';
 import RouterEngine from './RouterEngine';
+import ShellEngine from '../../widgets/Shell/ShellEngine';
+import { ClockEngine } from '../../widgets/Clock/ClockLive';
+import { startMergeEngine } from '../../widgets/Merge/mergeEngine';
 import MasterEngine from './MasterEngine';
 import PatchLayer from './PatchLayer';
-import { bridge } from '../../ipc/bridge';
-import { artnetConfigOutputs, sacnConfigOutputs, oscConfigOutputs, midiConfigOutputs } from '../../../shared/outputs';
 
 const SIDEBAR_WIDTH = 248;
 
@@ -23,54 +24,21 @@ export default function LiveMode(): React.JSX.Element {
 
   // Enter fullscreen on mount, exit on unmount
   useEffect(() => {
-    bridge.invoke('tr:window:fullscreen', true).catch(() => {});
-    // Leaving Live keeps full screen: LiveForge starts full screen and F11 is
-    // the way out.
+    // Full screen is the user's choice now (button in the top bar, F11):
+    // entering Live no longer forces it, so a window on a second screen stays put.
   }, []);
 
   // Runtime covers EVERY page's widgets (not just the active one) so cross-page
   // router links have their source/slave cells available regardless of which
   // page is shown. initRuntime merges existing values, so re-running is safe.
+  useEffect(() => { startMergeEngine(); }, []);
+
   useEffect(() => {
     initRuntime(project.pages.flatMap((p) => p.widgets));
   }, [project.pages, initRuntime]);
 
-  // Connections are opened ONCE per Live session, not per page.
-  //
-  // This effect used to be keyed on the active page id. ArtNetService and
-  // SacnService.configure() both start by closing the UDP socket and clearing
-  // every held universe/channel — so each page change tore the DMX stream down
-  // and threw away all current levels. OSC/MIDI got rebound the same way.
-  useEffect(() => {
-    const conns = project.connections;
-    const midi   = conns.find((c) => c.type === 'midi');
-    const osc    = conns.find((c) => c.type === 'osc');
-    const artnet = conns.find((c) => c.type === 'artnet');
-    const sacn   = conns.find((c) => c.type === 'sacn');
-
-    if (midi && midi.type === 'midi' && midi.portName) {
-      bridge.invoke('tr:midi:openPort', { portName: midi.portName, virtual: midi.virtualPort ?? false, extraOutputs: midiConfigOutputs(midi) }).catch(() => {});
-    }
-
-    if (osc && osc.type === 'osc' && osc.targetHost) {
-      bridge.invoke('tr:osc:configure', {
-        targetHost: osc.targetHost,
-        targetPort: osc.targetPort ?? 8000,
-        listenPort: osc.listenPort ?? 9000,
-        outputs: oscConfigOutputs(osc),
-        extraListenPorts: osc.extraListenPorts ?? [],
-      }).catch(() => {});
-    }
-    if (artnet && artnet.type === 'artnet' && artnet.targetHost) {
-      bridge.invoke('tr:artnet:configure', { outputs: artnetConfigOutputs(artnet) }).catch(() => {});
-    }
-    if (sacn && sacn.type === 'sacn') {
-      bridge.invoke('tr:sacn:configure', {
-        priority: sacn.priority ?? 100,
-        outputs:  sacnConfigOutputs(sacn),
-      }).catch(() => {});
-    }
-  }, [project.connections]);
+  // Connections are opened by App (once, from the project's saved state) —
+  // entering Live does not reconnect, so a protocol you disconnected stays off.
 
   // Compute scale to fit design canvas into the available space
   const computeScale = useCallback(() => {
@@ -116,6 +84,8 @@ export default function LiveMode(): React.JSX.Element {
     }}>
       {/* Global engines — run across all pages (cross-page links & master gains) */}
       <RouterEngine />
+      <ShellEngine />
+      <ClockEngine />
       <MasterEngine />
       {/* Hold Shift: drag cables from outputs to controls to link them. */}
       <PatchLayer />

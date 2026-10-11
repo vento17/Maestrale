@@ -12,7 +12,8 @@ import type {
   AutoBpmWidget,
   AudioAnalyserWidget, SoundPlayerWidget,
   LfoWidget, MathWidget, ValueDisplayWidget,
-  MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget, DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget,
+  MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget, DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget, EncoderWidget, EtcWidget,
+  ShellWidget, PaletteWidget, MergeWidget,
 } from '../../shared/types/project';
 import { BEAT_DIVISORS } from '../../shared/types/project';
 import type { MidiMapping, OscMapping } from '../../shared/types/mapping';
@@ -25,7 +26,7 @@ import {
   DEFAULT_SPOUT_RECT, DEFAULT_NDI_RECT, DEFAULT_SUBMASTERS_RECT, DEFAULT_ROUTER_RECT,
   DEFAULT_AUTO_BPM_RECT, DEFAULT_AUDIO_ANALYSER_RECT, DEFAULT_SOUND_PLAYER_RECT,
   DEFAULT_LFO_RECT, DEFAULT_MATH_RECT, DEFAULT_VALUE_DISPLAY_RECT,
-  DEFAULT_MASTER_LEVEL_RECT, DEFAULT_AUDIO_LEVEL_RECT, DEFAULT_SKETCH_RECT, DEFAULT_INSTANCE_RECT, DEFAULT_MANUAL_RECT,
+  DEFAULT_MASTER_LEVEL_RECT, DEFAULT_AUDIO_LEVEL_RECT, DEFAULT_ENCODER_RECT, DEFAULT_SHELL_RECT, DEFAULT_PALETTE_RECT, DEFAULT_MERGE_RECT, DEFAULT_ETC_RECT, DEFAULT_SKETCH_RECT, DEFAULT_INSTANCE_RECT, DEFAULT_MANUAL_RECT,
   DEFAULT_KEYBOARD_RECT, DEFAULT_DMX_RECORDER_RECT, DEFAULT_DMX_PLAYER_RECT, DEFAULT_CLOCK_RECT, DEFAULT_DMX_MONITOR_RECT,
 } from '../../shared/constants';
 
@@ -510,6 +511,84 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         orientation: 'vertical',
       } satisfies AudioLevelWidget;
     }
+    case 'etc': {
+      return {
+        id, zIndex, kind: 'etc',
+        label: 'ETC',
+        rect: { ...DEFAULT_ETC_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE, showLabel: false },
+        outputProtocol: 'osc',
+        mapping: null,
+        feedbackRules: [],
+        keyPrefix: '/eos/key',
+        encoderAddress: '/eos/active/wheel/fine/{n}',
+        ticksPerTurn: 100,
+        acceleration: 0.4,
+        faderAddresses: ['/eos/fader/0/1', '/eos/fader/0/2'],
+        hideOsc: true,
+        gmAddress: '/eos/fader/10/10',
+      } satisfies EtcWidget;
+    }
+    case 'encoder': {
+      return {
+        id, zIndex, kind: 'encoder',
+        label: 'Encoder',
+        rect: { ...DEFAULT_ENCODER_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE, fontSize: 18 },
+        outputProtocol: 'osc',
+        mapping: null,
+        feedbackRules: [],
+        format: 'oscDelta',
+        argType: 'f',
+        step: 1,
+        ticksPerTurn: 64,
+        acceleration: 0.4,
+        midiMode: 'offset64',
+        encoders: ['Intensity', 'Pan', 'Tilt', 'Zoom'].map((label, i) => ({
+          id: `${id}-e${i}`, label, address: `/eos/wheel/fine/${label.toLowerCase()}`, midiChannel: 1, midiCc: 20 + i,
+        })),
+      } satisfies EncoderWidget;
+    }
+    case 'shell': {
+      return {
+        id, zIndex, kind: 'shell',
+        label: 'Shell',
+        rect: { ...DEFAULT_SHELL_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'osc',
+        mapping: null,
+        feedbackRules: [],
+        buttons: [{ id: `${id}-b0`, label: 'Turn off PC', action: 'shutdown', delay: 10 }],
+      } satisfies ShellWidget;
+    }
+    case 'palette': {
+      return {
+        id, zIndex, kind: 'palette',
+        label: 'Palette',
+        rect: { ...DEFAULT_PALETTE_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'osc',
+        mapping: null,
+        feedbackRules: [],
+        colors: ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff'],
+        cols: 4,
+        model: 'rgb',
+      } satisfies PaletteWidget;
+    }
+    case 'merge': {
+      return {
+        id, zIndex, kind: 'merge',
+        label: 'Merge',
+        rect: { ...DEFAULT_MERGE_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'osc',
+        mapping: null,
+        feedbackRules: [],
+        mode: 'ltp',
+        every: 3,
+        smooth: 0.5,
+      } satisfies MergeWidget;
+    }
     case 'keyboard': {
       return {
         id, zIndex, kind: 'keyboard',
@@ -614,7 +693,7 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
 // Count total cells used across all widgets to compute next free CC
 export function nextFreeCc(widgets: Widget[]): number {
   return widgets.reduce((acc, w) => {
-    if (w.kind === 'xyPad') return acc + 2 * (1 + (w.points?.length ?? 0));
+    if (w.kind === 'xyPad') return acc + 2 * (1 + (w.points?.length ?? 0)) + (w.zSlider ? 1 : 0);
     if (w.kind === 'imageWidget' || w.kind === 'textWidget') return acc;
     if (w.kind === 'stepSequencer' || w.kind === 'graphWidget') return acc + 1;
     if (w.kind === 'cues' || w.kind === 'timeline') return acc;

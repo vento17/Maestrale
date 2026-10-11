@@ -12,7 +12,7 @@ import CellLinkMenu from '../base/CellLinkMenu';
 import { eachRouter } from '../base/routers';
 import { useSlavedCells, SLAVE_OUTLINE } from '../base/useSlavedCells';
 import NumberInput from '../base/NumberInput';
-import { widgetsInScope } from './scope';
+import { widgetsInScope, cueContentOf } from './scope';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +78,7 @@ export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.
 
   function saveCues(cues: CueData[]) {
     if (!activePageId) return;
+    useStore.getState().captureHistory();   // Ctrl+Z brings the cue back
     updateWidget(activePageId, widget.id, { cues } as never);
   }
 
@@ -87,13 +88,16 @@ export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.
     const { project, runtime } = useStore.getState();
     const snapshot: Record<string, number[]> = {};
     const play: Record<string, boolean> = {};
+    const content: Record<string, Record<string, unknown>> = {};
     // Defaults to every widget on every page; the two scope dropdowns narrow it.
-    for (const w of widgetsInScope(project, widget.scopePageId, widget.scopeWidgetId)) {
+    for (const w of widgetsInScope(project, widget.scopePageId, widget.scopeWidgetId, widget.excludeIds)) {
       const wr = runtime.widgets[w.id];
       if (wr) snapshot[w.id] = wr.cells.map((c) => c.value);
       // Widgets with their own transport (LFO, Graph, Step Sequencer) store it
       // in the runtime; capture it so the cue restores what was running.
       if (wr?.playing !== undefined) play[w.id] = wr.playing;
+      const c = cueContentOf(w);
+      if (c) content[w.id] = c;
     }
     // Capture link/routing state — every router's rows across all pages, so
     // recalling this cue restores exactly which cells are slaved to what.
@@ -102,7 +106,7 @@ export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.
       links[r.id] = JSON.parse(JSON.stringify(r.holder.rows)) as RouterRow[];
     }
     const n = widget.cues.length + 1;
-    saveCues([...widget.cues, { id: nanoid(), name: `Cue ${n}`, bgColor: '#1c2a1c', fadeTime: 0, snapshot, play, links }]);
+    saveCues([...widget.cues, { id: nanoid(), name: `Cue ${n}`, bgColor: '#1c2a1c', fadeTime: 0, snapshot, play, links, content }]);
   }
 
   // ─── Launch cue ───────────────────────────────────────────────────────────
@@ -120,6 +124,16 @@ export default function CuesLive({ widget }: { widget: CuesWidget }): React.JSX.
     if (cue.links) {
       try { useStore.getState().applyLinksSnapshot(cue.links); }
       catch (err) { console.error('[cue] failed to restore links', err); }
+    }
+
+    // Generator content (a Sketch's drawing, an LFO's wave…) snaps too.
+    if (cue.content) {
+      for (const [wid, c] of Object.entries(cue.content)) {
+        try {
+          const pg = project.pages.find((p) => p.widgets.some((w) => w.id === wid));
+          if (pg) useStore.getState().updateWidget(pg.id, wid, JSON.parse(JSON.stringify(c)) as never);
+        } catch (err) { console.error('[cue] failed to restore content', wid, err); }
+      }
     }
 
     // Transport is a boolean, so it snaps rather than fading with the values.

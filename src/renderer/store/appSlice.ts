@@ -217,6 +217,9 @@ export const createAppSlice: StateCreator<StoreState, [['zustand/immer', never]]
   setConnectedProtocol: (key, connected) => set((s) => {
     if (connected) s.connectedProtocols[key] = true;
     else delete s.connectedProtocols[key];
+    // Kept in the project too, so it reopens connected (or not) as you left it.
+    const p = (s as unknown as { project?: { connected?: Record<string, boolean> } }).project;
+    if (p && p.connected?.[key] !== connected) p.connected = { ...(p.connected ?? {}), [key]: connected };
   }),
 
   setBpmMode: (mode) => set((s) => { s.bpmMode = mode; }),

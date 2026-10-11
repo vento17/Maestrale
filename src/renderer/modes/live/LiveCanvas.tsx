@@ -29,7 +29,10 @@ function LiveWidget({ widget, onSelect }: { widget: Widget; onSelect?: (id: stri
         pointerEvents: isPassthrough ? 'none' : undefined,
       }}
       data-lf-patch={widget.id}
-      onPointerDown={() => onSelect?.(widget.id)}
+      // In the capture phase: touching ANY part of the widget shows its
+      // parameters on the right — its own toolbar, an empty corner, a control
+      // that stops the event for itself (a sketch's bar, a cue list…).
+      onPointerDownCapture={() => onSelect?.(widget.id)}
       onMouseMove={() => useStore.getState().setHoverInfo(`${widget.label} · ${widget.kind}`)}
       onMouseLeave={() => useStore.getState().setHoverInfo(null)}
     >

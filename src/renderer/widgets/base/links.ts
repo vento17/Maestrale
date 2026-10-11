@@ -31,6 +31,7 @@ export function cellLabel(w: Widget | undefined, cellIndex: number): string {
   // Negative cells are parameter inputs (timeline GO, LFO SPEED…).
   if (cellIndex < 0) return paramInputOf(w, cellIndex)?.label ?? `in ${-cellIndex}`;
   if (w.kind === 'xyPad') {
+    if (w.zSlider && cellIndex === 2 * (1 + (w.points?.length ?? 0))) return 'Z';
     const dot = Math.floor(cellIndex / 2), axis = cellIndex % 2 === 0 ? 'X' : 'Y';
     if (!w.points?.length) return axis;
     const name = dot === 0 ? '1' : (w.points[dot - 1]?.label || String(dot + 1));
@@ -48,6 +49,10 @@ export function cellLabel(w: Widget | undefined, cellIndex: number): string {
     return lane ? `out ${cellIndex + 1} φ${(Math.round(lane.phase * 100) / 100).toString()}` : `out ${cellIndex + 1}`;
   }
   if (w.kind === 'mathWidget') return 'result';
+  if (w.kind === 'etc') return ['Master 1', 'Master 2', 'Grandmaster', 'GO', 'STOP'][cellIndex] ?? `#${cellIndex + 1}`;
+  if (w.kind === 'shell') return w.buttons[cellIndex]?.label || `#${cellIndex + 1}`;
+  if (w.kind === 'palette') return `${Math.floor(cellIndex / 3) + 1} ${'RGB'[cellIndex % 3]}`;
+  if (w.kind === 'merge') return String(cellIndex + 1);
   if (w.kind === 'masterLevel') return 'level';
   if (w.kind === 'sketch') {
     const axis = cellIndex % 2 === 0 ? 'X' : 'Y';
@@ -134,7 +139,7 @@ function allCells(widget: Widget): SourceCell[] {
 // not offer a DMX recorder as a value source or a monitor to a submaster.
 
 // Widgets whose cells are triggers or mirrors, never values worth reading.
-const NOT_A_SOURCE = new Set<Widget['kind']>(['dmxPlayer', 'dmxRecorder', 'instance', 'manual', 'textWidget', 'imageWidget', 'dmxMonitor']);
+const NOT_A_SOURCE = new Set<Widget['kind']>(['shell', 'dmxPlayer', 'dmxRecorder', 'instance', 'manual', 'textWidget', 'imageWidget', 'dmxMonitor']);
 export function isLinkSource(w: Widget): boolean {
   return !NOT_A_SOURCE.has(w.kind) && cellCount(w) > 0;
 }
@@ -142,8 +147,9 @@ export function isLinkSource(w: Widget): boolean {
 // What a submaster scene can hold: plain controls.
 export const SUBMASTER_KINDS = new Set<Widget['kind']>(['sliderBank', 'knobBank', 'buttonGrid', 'xyPad']);
 export const SUBMASTER_ALL = '*all*';
-export function submasterTargets(project: Project, sub: { id: string; linkedWidgetIds: string[] }): Widget[] {
-  const all = project.pages.flatMap((p) => p.widgets).filter((w) => w.id !== sub.id && SUBMASTER_KINDS.has(w.kind));
+export function submasterTargets(project: Project, sub: { id: string; linkedWidgetIds: string[]; excludeWidgetIds?: string[] }): Widget[] {
+  const ex = sub.excludeWidgetIds ?? [];
+  const all = project.pages.flatMap((p) => p.widgets).filter((w) => w.id !== sub.id && SUBMASTER_KINDS.has(w.kind) && !ex.includes(w.id));
   if (sub.linkedWidgetIds.includes(SUBMASTER_ALL)) return all;
   return all.filter((w) => sub.linkedWidgetIds.includes(w.id));
 }
@@ -163,7 +169,7 @@ export function sourceCells(widget: Widget): SourceCell[] {
 // output onto an output means nothing.
 export const INPUT_KINDS = new Set<Widget['kind']>([
   'sliderBank', 'knobBank', 'buttonGrid', 'xyPad', 'masterLevel',
-  'keyboard', 'soundPlayer', 'cues', 'submasters', 'dmxRecorder', 'dmxPlayer',
+  'keyboard', 'soundPlayer', 'cues', 'submasters', 'dmxRecorder', 'dmxPlayer', 'etc', 'shell',
 ]);
 
 // Cells a router output can DRIVE: the cells of input widgets, plus parameter

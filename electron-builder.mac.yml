@@ -1,7 +1,7 @@
 # macOS build config — used by CI only (electron-builder --mac dmg --config electron-builder.mac.yml).
 # Deliberately OMITS the Spout/NDI sidecar (Windows-only). Everything else works.
 appId: com.vento.liveforge
-productName: LiveForge
+productName: Maestrale
 directories:
   output: release
 files:

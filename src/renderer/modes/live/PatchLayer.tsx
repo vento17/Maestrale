@@ -6,6 +6,16 @@ import { cellCount } from '../../widgets/utils';
 import { cellLabel, describeRowSource, allCellsLabel, INPUT_KINDS , isLinkSource } from '../../widgets/base/links';
 import { eachRouter, MAIN_ROUTER_ID } from '../../widgets/base/routers';
 import { paramInputsOf } from '../../widgets/base/paramInputs';
+import { connectedInputs } from '../../widgets/Merge/mergeEngine';
+
+// Drop target "the Merge box" (resolved to its next free input on drop).
+const MERGE_NEXT = -999999;
+function nextMergeInput(used: number[]): number {
+  const u = new Set(used);
+  let k = 1;
+  while (u.has(k)) k++;
+  return k;
+}
 import { GLOBAL_BAR_HEIGHT } from '../GlobalBar';
 import type { Widget } from '../../../shared/types/project';
 
@@ -83,7 +93,7 @@ function isTyping(t: EventTarget | null): boolean {
 // element (data-lf-cell) get dots on that element; widgets whose outputs have
 // no element of their own (LFO, math, timeline, analyser, XY axes…) get a row
 // of dots along their edges, one per cell.
-function measure(): Geometry {
+function measure(pending: PendingLink[] = []): Geometry {
   const root = document.getElementById('lf-page-canvas');
   const { project, activePageId } = useStore.getState();
   const page = project.pages.find((p) => p.id === activePageId);
@@ -121,6 +131,26 @@ function measure(): Geometry {
         y: box.top + 9,
       });
     });
+
+    // Merge: one box takes any number of cables. Each connected input gets a
+    // port along the box's left edge; the box itself is the drop target for
+    // the next one (MERGE_NEXT, resolved to the first free input on drop).
+    if (w.kind === 'merge') {
+      const box2 = root.querySelector<HTMLElement>(`[data-lf-merge-in="${CSS.escape(w.id)}"]`)?.getBoundingClientRect();
+      if (box2 && box2.width > 0) {
+        const ks = new Set(connectedInputs(project, w.id));
+        pending.forEach((p) => { if (p.target.widgetId === w.id && p.target.cellIndex < 0 && p.target.cellIndex !== MERGE_NEXT) ks.add(-p.target.cellIndex); });
+        const list = [...ks].sort((a, b) => a - b);
+        const top = box2.top + 18, span = Math.max(1, box2.height - 26);
+        list.forEach((k, j) => {
+          push(g.ins, g.inByKey, { widgetId: w.id, cellIndex: -k, label: `${w.label} · in ${k}`,
+            x: box2.left + 7, y: top + (list.length === 1 ? span / 2 : (j / (list.length - 1)) * span) });
+        });
+        push(g.ins, g.inByKey, { widgetId: w.id, cellIndex: MERGE_NEXT, label: `${w.label} · + new input (in ${nextMergeInput(list)})`,
+          x: box2.left + box2.width / 2, y: box2.top + box2.height / 2 });
+        g.inRects.push({ ref: { widgetId: w.id, cellIndex: MERGE_NEXT }, rect: box2 });
+      }
+    }
 
     const isIn = INPUT_KINDS.has(w.kind) || (w.kind === 'audioLevel' && w.mode === 'out');
     const isOut = isLinkSource(w);   // triggers-only widgets (players, recorder) get no output dot
@@ -346,7 +376,11 @@ function hitCut(g: Geometry, cables: DrawnCable[], x: number, y: number): CutTar
 const cutId = (t: CutTarget): string => (t.kind === 'input' ? `in:${keyOf(t.ref)}` : `cable:${t.cable.id}`);
 
 interface PatchState {
-  shift: boolean;
+  shift: boolean;          // patching is on: latched OR Shift held
+  latched: boolean;        // a tap on Shift switched it on (another tap: off)
+  held: boolean;           // Shift is down right now
+  latchedAtPress: boolean; // was it latched when this press began
+  used: boolean;           // something was done while Shift was down (not a tap)
   cable: { source: CellRef; pressed: boolean; linkedOnDown: string | null } | null;
   pending: PendingLink[];
   pointer: { x: number; y: number };
@@ -357,7 +391,7 @@ interface PatchState {
 
 export default function PatchLayer(): React.JSX.Element | null {
   const st = useRef<PatchState>({
-    shift: false, cable: null, pending: [],
+    shift: false, latched: false, held: false, latchedAtPress: false, used: false, cable: null, pending: [],
     pointer: { x: 0, y: 0 }, geo: EMPTY, swallowing: false, lastTap: null,
   });
   const [, force] = useReducer((n: number) => n + 1, 0);
@@ -377,7 +411,7 @@ export default function PatchLayer(): React.JSX.Element | null {
     if (!showing) return;
     let raf = 0;
     const loop = (): void => {
-      st.current.geo = measure();
+      st.current.geo = measure(st.current.pending);
       force();
       raf = requestAnimationFrame(loop);
     };
@@ -389,7 +423,7 @@ export default function PatchLayer(): React.JSX.Element | null {
     const s = st.current;
 
     const reset = (): void => {
-      s.shift = false; s.cable = null; s.pending = []; s.swallowing = false;
+      s.shift = false; s.latched = false; s.held = false; s.cable = null; s.pending = []; s.swallowing = false;
       force();
     };
 
@@ -407,7 +441,14 @@ export default function PatchLayer(): React.JSX.Element | null {
       force();
     };
 
-    const addLink = (source: CellRef, target: CellRef): void => {
+    const addLink = (source: CellRef, target0: CellRef): void => {
+      let target = target0;
+      if (target.cellIndex === MERGE_NEXT) {
+        // The Merge box: this cable becomes its next free input.
+        const used = new Set(connectedInputs(useStore.getState().project, target.widgetId));
+        s.pending.forEach((p) => { if (p.target.widgetId === target.widgetId && p.target.cellIndex < 0) used.add(-p.target.cellIndex); });
+        target = { widgetId: target.widgetId, cellIndex: -nextMergeInput([...used]) };
+      }
       if (keyOf(source) === keyOf(target)) return;
       // One source per slave cell — re-dropping on a cell re-sources it.
       s.pending = s.pending.filter((p) => keyOf(p.target) !== keyOf(target));
@@ -442,18 +483,37 @@ export default function PatchLayer(): React.JSX.Element | null {
       }
       if (e.key === 'Shift') {
         if (e.repeat || isTyping(e.target)) return;
+        s.held = true; s.used = false; s.latchedAtPress = s.latched;
         s.shift = true;
         force();
         return;
       }
       // Shift used as a modifier (Shift+Arrow in the timeline…): not patching.
-      if (s.shift && !s.cable && s.pending.length === 0) { s.shift = false; force(); }
+      if (s.held) {
+        s.used = true;
+        if (!s.latched && !s.cable && s.pending.length === 0) { s.shift = false; force(); }
+      }
     };
 
+    // Shift: a TAP switches patching on (cables stay shown, one drag = one
+    // cable) and another tap switches it off, saving what was made. HOLDING it
+    // keeps the cable on the pointer: many drops from the same output.
     const releaseShift = (): void => {
-      if (!s.shift) return;
+      if (!s.held) return;
+      s.held = false;
+      if (!s.used) {
+        // A tap: toggle.
+        if (s.latchedAtPress) { s.latched = false; s.shift = false; s.cable = null; finish(); return; }
+        s.latched = true; s.shift = true; force(); return;
+      }
+      if (s.latched) {
+        // Held inside latched mode: drop the cable in hand, stay on.
+        if (!s.cable?.pressed) s.cable = null;
+        force();
+        return;
+      }
       s.shift = false;
-      // Mid-drag: the drop that follows is the last one, it opens the picker.
+      // Mid-drag: the drop that follows is the last one.
       if (s.cable?.pressed) { force(); return; }
       finish();
     };
@@ -464,8 +524,9 @@ export default function PatchLayer(): React.JSX.Element | null {
       if (!s.shift && !s.cable) return;
       const x = e.clientX, y = e.clientY;
       s.pointer = { x, y };
-      s.geo = measure();
+      s.geo = measure(s.pending);
 
+      if (s.held) s.used = true;
       const out = nearest(s.geo.outs, x, y, HIT);
       if (out) {
         eat(e);
@@ -518,12 +579,15 @@ export default function PatchLayer(): React.JSX.Element | null {
       if (!c?.pressed) return;
       const x = e.clientX, y = e.clientY;
       s.pointer = { x, y };
-      s.geo = measure();
+      s.geo = measure(s.pending);
       const tgt = hitInput(s.geo, x, y, c.source);
       if (tgt && keyOf(tgt) !== c.linkedOnDown) addLink(c.source, tgt);
-      if (s.shift) {
-        c.pressed = false;           // cable stays on the mouse for the next drop
+      if (s.held) {
+        c.pressed = false;           // Shift held: cable stays on the mouse for the next drop
         c.linkedOnDown = null;
+        force();
+      } else if (s.latched) {
+        s.cable = null;              // latched: one drag, one cable — patching stays on
         force();
       } else {
         finish();
@@ -531,7 +595,7 @@ export default function PatchLayer(): React.JSX.Element | null {
     };
 
     const swallow = (e: Event): void => { if (s.swallowing) eat(e); };
-    const onBlur = (): void => { releaseShift(); };
+    const onBlur = (): void => { if (s.held) { s.used = true; releaseShift(); } };
 
     const SWALLOWED = ['mousedown', 'mouseup', 'click', 'dblclick', 'dragstart', 'contextmenu'] as const;
     window.addEventListener('keydown', onKeyDown, true);
@@ -658,7 +722,9 @@ export default function PatchLayer(): React.JSX.Element | null {
             {'  →  '}
             <span style={{ color: IN_COLOR }}>● input</span>
             {s.pending.length > 0 && <span style={{ color: '#ddd' }}>{`   ·   ${s.pending.length} pending`}</span>}
-            <span style={{ color: '#777' }}>{'   ·   double-click a cable: unlink   ·   release Shift: save to the main router · Esc cancels'}</span>
+            <span style={{ color: '#777' }}>{s.latched
+              ? '   ·   drag = one cable · hold Shift = many from one output · double-click a cable: unlink · tap Shift: save and close · Esc cancels'
+              : '   ·   double-click a cable: unlink   ·   release Shift: save · tap Shift: stay in patching · Esc cancels'}</span>
           </div>
         )}
       </div>

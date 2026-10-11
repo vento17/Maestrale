@@ -1,6 +1,7 @@
 import { pal } from '../../palette';
 import { AQUA, AQUA_BRIGHT, ORANGE, ORANGE_BRIGHT } from '../../theme';
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { subscribeTabNav, tabDir, setTabDir, pendingCell, openCell, cellKey, nextCell } from './tabNav';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import type { Project, Widget, RouterRow, RouterOutput, RouterInputType } from '../../../shared/types/project';
@@ -34,7 +35,7 @@ const KIND_NAME: Partial<Record<Widget['kind'], string>> = {
   stepSequencer: 'step sequencer', graphWidget: 'graph', submasters: 'submasters',
   autoBpm: 'auto bpm', timeline: 'timeline', audioAnalyser: 'audio analyser',
   soundPlayer: 'sound player', cues: 'cues', lfoWidget: 'lfo', noiseWidget: 'noise', sketch: 'sketch', mathWidget: 'math',
-  masterLevel: 'master', audioLevel: 'audio level', keyboard: 'keyboard', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock',
+  masterLevel: 'master', audioLevel: 'audio level', keyboard: 'keyboard', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge',
 };
 const PARAM_NAME: Partial<Record<Widget['kind'], string>> = {
   sliderBank: 'fader', knobBank: 'knob', buttonGrid: 'button', xyPad: 'axis',
@@ -174,6 +175,8 @@ type Units = 'native' | 'norm';
 type SortKey = 'new' | 'old' | 'src' | 'dst';
 
 const ROW_H = 36;
+// The four numbers of a link, in the order Tab walks them across a row.
+const NUM_COLS = 4;
 const COLS: { key: string; label: string; w: number; sort?: SortKey; align?: 'right' | 'center' }[] = [
   { key: 'date',   label: 'Added',       w: 78,  sort: 'new' },
   { key: 'src',    label: 'Source',      w: 250, sort: 'src' },
@@ -186,6 +189,8 @@ const COLS: { key: string; label: string; w: number; sort?: SortKey; align?: 'ri
   { key: 'outmin', label: 'out min',     w: 62,  align: 'right' },
   { key: 'outmax', label: 'out max',     w: 62,  align: 'right' },
   { key: 'live',   label: 'live',        w: 62,  align: 'right' },
+  { key: 'smooth', label: 'smooth',      w: 144 },
+  { key: 'spring', label: 'spring',      w: 120 },
   { key: 'router', label: 'Router',      w: 90 },
   { key: 'on',     label: 'on',          w: 40,  align: 'center' },
   { key: 'del',    label: '',            w: 36,  align: 'center' },
@@ -212,6 +217,7 @@ export default function RouterPage(): React.JSX.Element | null {
   });
   const setUnits = (u: Units) => { setUnitsState(u); try { localStorage.setItem('lf.router.units', u); } catch { /* private mode */ } };
   const scrollRef = useRef<HTMLDivElement>(null);
+  const tDir = useSyncExternalStore(subscribeTabNav, tabDir);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const links = useMemo(() => buildLinks(project), [project]);
@@ -316,6 +322,11 @@ export default function RouterPage(): React.JSX.Element | null {
           <option value="src">source A→Z</option>
           <option value="dst">destination A→Z</option>
         </select>
+        <button onClick={() => setTabDir(tDir === 'down' ? 'across' : 'down')}
+          title="Where Tab goes from a number: down the same column, link after link, or across the row"
+          style={{ ...btnStyle, color: '#ddd' }}>
+          {tDir === 'down' ? 'tab: ↓ column' : 'tab: → row'}
+        </button>
         <button onClick={() => setUnits(units === 'native' ? 'norm' : 'native')}
           title="Show ranges in real units (MIDI 0–127, DMX 0–255…) or all normalised 0–1"
           style={{ ...btnStyle, color: '#ddd' }}>
@@ -364,8 +375,19 @@ export default function RouterPage(): React.JSX.Element | null {
           ) : (
             <div style={{ height: shown.length * ROW_H, position: 'relative' }}>
               {visible.map((l, i) => (
-                <LinkLine key={l.key} link={l} top={(first + i) * ROW_H}
+                <LinkLine key={l.key} link={l} top={(first + i) * ROW_H} row={first + i}
                   flash={flashKey === l.key} units={units}
+                  onTab={(col, back) => {
+                    const n = nextCell(first + i, col, shown.length, NUM_COLS, back);
+                    // Scroll the row into view so it is rendered, then open it.
+                    const el = scrollRef.current;
+                    if (el) {
+                      const y = n.row * ROW_H;
+                      if (y < el.scrollTop + ROW_H) el.scrollTo({ top: Math.max(0, y - ROW_H * 2) });
+                      else if (y > el.scrollTop + el.clientHeight - 2 * ROW_H) el.scrollTo({ top: y - el.clientHeight + 3 * ROW_H });
+                    }
+                    openCell(cellKey(n.row, n.col));
+                  }}
                   onNav={(side, x, y) => setNav({ link: l, side, x, y })} />
               ))}
             </div>
@@ -382,9 +404,10 @@ export default function RouterPage(): React.JSX.Element | null {
 
 // ─── One table line ───────────────────────────────────────────────────────────
 
-function LinkLine({ link: l, top, flash, onNav, units }: {
-  link: Link; top: number; flash: boolean; units: Units;
+function LinkLine({ link: l, top, row, flash, onNav, onTab, units }: {
+  link: Link; top: number; row: number; flash: boolean; units: Units;
   onNav: (side: 'src' | 'dst', x: number, y: number) => void;
+  onTab: (col: number, back: boolean) => void;
 }): React.JSX.Element {
   const m = l.out.mapping as (Mapping & { minValue?: number; maxValue?: number }) | null;
   const protoOut = l.dst !== 'widget' && l.dst !== 'none';
@@ -440,14 +463,24 @@ function LinkLine({ link: l, top, flash, onNav, units }: {
       {cell(W.date, <span style={{ color: '#666', fontSize: 11 }}>{fmtDate(l.createdAt)}</span>)}
       {cell(W.src, <Target text={l.srcText} onClick={(e) => onNav('src', e.clientX, e.clientY)} />)}
       {cell(W.sproto, <ProtoTag p={l.src} />)}
-      {cell(W.inmin, <NumCell value={show(inMinN, S)} scale={sIn} onCommit={(v) => setIn('inMin', v)} />, 'right')}
-      {cell(W.inmax, <NumCell value={show(inMaxN, S)} scale={sIn} onCommit={(v) => setIn('inMax', v)} />, 'right')}
+      {cell(W.inmin, <NumCell navKey={cellKey(row, 0)} onTab={(back) => onTab(0, back)} value={show(inMinN, S)} scale={sIn} onCommit={(v) => setIn('inMin', v)} />, 'right')}
+      {cell(W.inmax, <NumCell navKey={cellKey(row, 1)} onTab={(back) => onTab(1, back)} value={show(inMaxN, S)} scale={sIn} onCommit={(v) => setIn('inMax', v)} />, 'right')}
       {cell(W.arrow, <span style={{ color: l.src !== l.dst && l.dst !== 'none' ? pal('#ff9e4a') : '#555' }}>{l.src !== l.dst && l.dst !== 'none' ? '⇄' : '→'}</span>, 'center')}
       {cell(W.dst, <Target text={l.dstText} onClick={(e) => onNav('dst', e.clientX, e.clientY)} />)}
       {cell(W.dproto, <ProtoTag p={l.dst} />)}
-      {cell(W.outmin, <NumCell value={show(outMinN, D)} scale={sOut} onCommit={(v) => setOut('min', v)} />, 'right')}
-      {cell(W.outmax, <NumCell value={show(outMaxN, D)} scale={sOut} onCommit={(v) => setOut('max', v)} />, 'right')}
+      {cell(W.outmin, <NumCell navKey={cellKey(row, 2)} onTab={(back) => onTab(2, back)} value={show(outMinN, D)} scale={sOut} onCommit={(v) => setOut('min', v)} />, 'right')}
+      {cell(W.outmax, <NumCell navKey={cellKey(row, 3)} onTab={(back) => onTab(3, back)} value={show(outMaxN, D)} scale={sOut} onCommit={(v) => setOut('max', v)} />, 'right')}
       {cell(W.live, <LiveValue link={l} scale={sIn} />, 'right')}
+      {cell(W.smooth, <FilterCell on={!!l.out.smoothOn} value={l.out.smooth ?? 0.3}
+        dir={l.out.smoothDir ?? 'both'}
+        onDir={(d) => { useStore.getState().captureHistory(); useStore.getState().updateRouterOutput(l.routerId, l.row.id, l.out.id, { smoothDir: d }); }}
+        hint="Smooth: glides to each new value instead of jumping — the slider sets how slowly"
+        onToggle={(on) => { useStore.getState().captureHistory(); useStore.getState().updateRouterOutput(l.routerId, l.row.id, l.out.id, { smoothOn: on }); }}
+        onChange={(v) => useStore.getState().updateRouterOutput(l.routerId, l.row.id, l.out.id, { smooth: v })} />)}
+      {cell(W.spring, <FilterCell on={!!l.out.springOn} value={l.out.spring ?? 0.5}
+        hint="Spring: follows with a bounce — the slider sets how springy"
+        onToggle={(on) => { useStore.getState().captureHistory(); useStore.getState().updateRouterOutput(l.routerId, l.row.id, l.out.id, { springOn: on }); }}
+        onChange={(v) => useStore.getState().updateRouterOutput(l.routerId, l.row.id, l.out.id, { spring: v })} />)}
       {cell(W.router, <span style={{ color: l.isMain ? '#666' : '#9ab', fontSize: 11 }}>{l.routerLabel}</span>)}
       {cell(W.on, <input type="checkbox" checked={!muted} title={muted ? 'Off — click to enable' : 'On — click to switch off'}
         onChange={() => {
@@ -456,6 +489,37 @@ function LinkLine({ link: l, top, flash, onNav, units }: {
         }} />, 'center')}
       {cell(W.del, <button title="Delete link" onClick={() => useStore.getState().removeRouterOutputs([{ routerId: l.routerId, rowId: l.row.id, outputId: l.out.id }])}
         style={{ background: 'none', border: 'none', color: '#664444', cursor: 'pointer', fontSize: 14 }}>✕</button>, 'center')}
+    </div>
+  );
+}
+
+// Toggle + slider for a motion filter on one link.
+type SmoothDir = 'in' | 'both' | 'out';
+const DIR_NEXT: Record<SmoothDir, SmoothDir> = { in: 'both', both: 'out', out: 'in' };
+const DIR_HINT: Record<SmoothDir, string> = { in: 'only rising (attack)', both: 'rising and falling', out: 'only falling (release)' };
+// Little curve: ramp up, S (ease in-out), ramp down.
+function DirIcon({ d }: { d: SmoothDir }): React.JSX.Element {
+  const path = d === 'in' ? 'M2 12 L12 2' : d === 'out' ? 'M2 2 L12 12' : 'M2 12 C8 12 6 2 12 2';
+  return <svg width={14} height={14} viewBox="0 0 14 14"><path d={path} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" /></svg>;
+}
+
+function FilterCell({ on, value, hint, onToggle, onChange, dir, onDir }: {
+  on: boolean; value: number; hint: string; onToggle: (on: boolean) => void; onChange: (v: number) => void;
+  dir?: SmoothDir; onDir?: (d: SmoothDir) => void;
+}): React.JSX.Element {
+  return (
+    <div title={hint} style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
+      <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} />
+      {dir && onDir && (
+        <button onClick={() => onDir(DIR_NEXT[dir])} title={`Smooth ${DIR_HINT[dir]} — click: in → both → out`}
+          style={{ width: 20, height: 18, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            background: 'transparent', border: '1px solid #2a2a2a', borderRadius: 3, cursor: 'pointer', color: on ? 'var(--lf-aqua)' : '#555' }}>
+          <DirIcon d={dir} />
+        </button>
+      )}
+      <input type="range" min={0} max={1} step={0.01} value={value} disabled={!on}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ flex: 1, minWidth: 0, opacity: on ? 1 : 0.3, accentColor: 'var(--lf-aqua)' }} />
     </div>
   );
 }
@@ -493,9 +557,17 @@ function ProtoTag({ p }: { p: Proto }): React.JSX.Element {
 function fmtScaled(v: number, sc: Scale): string {
   return sc.int ? String(Math.round(v)) : String(Math.round(v * 1000) / 1000);
 }
-function NumCell({ value, scale, onCommit }: { value: number; scale: Scale; onCommit: (v: number) => void }): React.JSX.Element {
+function NumCell({ value, scale, onCommit, navKey, onTab }: {
+  value: number; scale: Scale; onCommit: (v: number) => void; navKey?: string; onTab?: (back: boolean) => void;
+}): React.JSX.Element {
   const [edit, setEdit] = useState<string | null>(null);
   const lo = Math.min(scale.lo, scale.hi), hi = Math.max(scale.lo, scale.hi);
+  // Tab from the number before this one: open for typing straight away.
+  const pend = useSyncExternalStore(subscribeTabNav, pendingCell);
+  const shown = fmtScaled(value, scale);
+  useEffect(() => {
+    if (navKey && pend === navKey && edit === null) { openCell(null); setEdit(shown); }
+  }, [pend, navKey, edit, shown]);
   if (edit !== null) {
     const commit = () => {
       const v = Number(edit.replace(',', '.'));
@@ -503,8 +575,12 @@ function NumCell({ value, scale, onCommit }: { value: number; scale: Scale; onCo
       if (Number.isFinite(v)) onCommit(Math.max(lo, Math.min(hi, v)));
     };
     return (
-      <input autoFocus value={edit} onChange={(e) => setEdit(e.target.value)} onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { e.stopPropagation(); setEdit(null); } }}
+      <input autoFocus onFocus={(e) => e.currentTarget.select()} value={edit} onChange={(e) => setEdit(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Tab' && onTab) { e.preventDefault(); e.stopPropagation(); commit(); onTab(e.shiftKey); }
+          if (e.key === 'Escape') { e.stopPropagation(); setEdit(null); }
+        }}
         style={{ width: '100%', height: 26, background: '#000', border: `1px solid ${pal('#ff881f')}`, color: '#fff', textAlign: 'right', fontFamily: 'inherit', fontSize: 13, padding: '0 4px' }} />
     );
   }
@@ -813,12 +889,19 @@ function NavItem({ children, onClick, current, color }: { children: React.ReactN
   );
 }
 
+// '#ddd' + '22' would be '#ddd22' — not a colour at all, so the button kept the
+// browser's own light background and the pale text vanished into it.
+function hex6(c: string): string {
+  const m = /^#([0-9a-f]{3})$/i.exec(c.trim());
+  return m ? `#${m[1].split('').map((d) => d + d).join('')}` : c;
+}
 function Chip({ on, color, onClick, children }: { on: boolean; color: string; onClick: () => void; children: React.ReactNode }): React.JSX.Element {
+  const c = hex6(color);
   return (
     <button onClick={onClick} style={{
       height: 30, padding: '0 10px', borderRadius: 15, cursor: 'pointer', fontFamily: 'monospace', fontSize: 12,
-      background: on ? `${color}22` : 'transparent', color: on ? color : '#777',
-      border: `1px solid ${on ? color : '#2a2a2a'}`,
+      background: on ? `${c}22` : 'transparent', color: on ? c : '#777',
+      border: `1px solid ${on ? c : '#2a2a2a'}`,
     }}>{children}</button>
   );
 }

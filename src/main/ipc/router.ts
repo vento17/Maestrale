@@ -10,6 +10,7 @@ import { registerFileHandlers } from './fileHandlers';
 import { registerNetworkHandlers } from './networkHandlers';
 import { registerDmxTakeHandlers } from './dmxTakeHandlers';
 import { registerDmxMonitorHandlers } from './dmxMonitorHandlers';
+import { registerShellHandlers } from './shellHandlers';
 
 export function registerAllHandlers(win: BrowserWindow): void {
   registerProjectHandlers();
@@ -23,4 +24,5 @@ export function registerAllHandlers(win: BrowserWindow): void {
   registerWindowHandlers(win);
   registerFileHandlers(win);
   registerNetworkHandlers(win);
+  registerShellHandlers(win);
 }

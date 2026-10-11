@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore, useMode, useIsLocked, useProject, useActivePageId } from '../store';
 import { makeDefaultProject } from '../store/layoutSlice';
+import { markSaved, isSaved, setDiscarding } from '../store/savedMark';
 import type { Mapping, MidiMapping, OscMapping } from '../../shared/types/mapping';
 import { bridge } from '../ipc/bridge';
 import { onDmxInput, snapshotDmx, onDmxInputStatus } from '../ipc/dmxInput';
@@ -11,7 +12,7 @@ import { MAIN_ROUTER_ID } from '../widgets/base/routers';
 import { AutoBpmService } from '../audio/AutoBpmService';
 import type { AutoBpmConfig } from '../audio/AutoBpmService';
 
-export const GLOBAL_BAR_HEIGHT = 76; // 50px main bar + 26px BPM strip
+export const GLOBAL_BAR_HEIGHT = 100; // 50px main bar + 50px BPM strip (31px × zoom 1.6)
 const MAX_PAGES = 12;
 
 // Module-level singleton — persists for the lifetime of the app
@@ -312,7 +313,7 @@ export default function GlobalBar(): React.JSX.Element {
   const modeRef       = useRef(mode);
   const activePgRef   = useRef(activePageId);
   const isLockedKbRef = useRef(isLocked);
-  const saveRef = useRef<(as?: boolean) => Promise<void>>(async () => {});
+  const saveRef = useRef<(as?: boolean) => Promise<boolean>>(async () => false);
   modeRef.current       = mode;
   activePgRef.current   = activePageId;
   isLockedKbRef.current = isLocked;
@@ -473,8 +474,29 @@ export default function GlobalBar(): React.JSX.Element {
 
   async function handleSave(as = false) {
     const st = useStore.getState();
-    const res = await bridge.invoke(as ? 'tr:project:save' : 'tr:project:saveQuick', st.project);
-    if (res?.ok) st.addLog('info', `Saved ${res.path}`);
+    const proj = st.project;
+    const res = await bridge.invoke(as ? 'tr:project:save' : 'tr:project:saveQuick', proj);
+    if (res?.ok) { markSaved(proj); st.addLog('info', `Saved ${res.path}`); }
+    return !!res?.ok;
+  }
+
+  // Window: full screen on/off and moving to another screen. The state comes
+  // from the main process (F11 changes it too).
+  const [winState, setWinState] = useState({ fullscreen: true, displays: 1 });
+  useEffect(() => {
+    bridge.invoke('tr:window:state', undefined as never).then((st) => { if (st) setWinState(st); }).catch(() => {});
+    return bridge.on('tr:window:changed', (st) => setWinState(st));
+  }, []);
+  const winBtn: React.CSSProperties = {
+    ...styles.lockBtn, width: 34, padding: 0, marginLeft: 4,
+    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)',
+  };
+
+  // Close: asks first, unless nothing changed since the last save.
+  const [askClose, setAskClose] = useState(false);
+  function handleClose() {
+    if (isSaved(useStore.getState().project)) bridge.send('tr:window:close', undefined as never);
+    else setAskClose(true);
   }
   saveRef.current = handleSave;
 
@@ -483,13 +505,15 @@ export default function GlobalBar(): React.JSX.Element {
   const [askNew, setAskNew] = useState(false);
   function handleNew() {
     void bridge.invoke('tr:project:forget', undefined as never);
+    markSaved(null);
     loadProject(makeDefaultProject());
+    useStore.getState().setMode('design');   // a blank project is for building
     setAskNew(false);
   }
 
   async function handleLoad() {
     const loaded = await bridge.invoke('tr:project:load', undefined as never);
-    if (loaded) loadProject(loaded);
+    if (loaded) { loadProject(loaded); markSaved(useStore.getState().project); }
   }
 
   // Page tabs: drag to reorder, right-click to delete the one you point at —
@@ -520,7 +544,7 @@ export default function GlobalBar(): React.JSX.Element {
       {/* ── Row 1: main bar ── */}
       <div style={styles.bar}>
         {/* Left */}
-        <span style={styles.logo}>LiveForge</span>
+        <span style={styles.logo}>Maestrale</span>
 
         {mode === 'design' && (
           <>
@@ -766,7 +790,7 @@ export default function GlobalBar(): React.JSX.Element {
         )}
 
         {mode === 'live' && (
-          <Btn onClick={() => setMode('design')} disabled={isLocked}>✕ Config</Btn>
+          <Btn onClick={() => setMode('design')} disabled={isLocked}>Edit</Btn>
         )}
 
         <button
@@ -791,6 +815,39 @@ export default function GlobalBar(): React.JSX.Element {
             <circle cx="6" cy="10.5" r="1.2" fill="currentColor" stroke="none"/>
           </svg>
         </button>
+        {winState.displays > 1 && (
+          <button onClick={() => void bridge.invoke('tr:window:nextDisplay', undefined as never)} title="Move Maestrale to the next screen" style={winBtn}>
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="0.7" y="0.7" width="7" height="6" rx="1" /><rect x="8.3" y="5.3" width="7" height="6" rx="1" /><path d="M5 9.5 L7 9.5 M11 2.5 L9 2.5" /></svg>
+          </button>
+        )}
+        <button onClick={() => void bridge.invoke('tr:window:toggleFullscreen', undefined as never)} title={winState.fullscreen ? 'Leave full screen (F11) — then drag the window anywhere' : 'Full screen (F11)'} style={winBtn}>
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            {winState.fullscreen
+              ? <path d="M5 1 V5 H1 M8 1 V5 H12 M5 12 V8 H1 M8 12 V8 H12" />
+              : <path d="M1 5 V1 H5 M12 5 V1 H8 M1 8 V12 H5 M12 8 V12 H8" />}
+          </svg>
+        </button>
+        <button onClick={() => bridge.send('tr:window:minimize', undefined as never)} title="Minimise Maestrale" style={{ ...winBtn, fontSize: 14 }}>▁</button>
+        <button onClick={handleClose} title="Close Maestrale" style={{ ...winBtn, fontSize: 14 }}>✕</button>
+        {askClose && (
+          <div onPointerDown={() => setAskClose(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => { if (e.key === 'Escape') setAskClose(false); }}
+              style={{ background: '#151515', border: '1px solid #333', borderRadius: 6, padding: '18px 20px', width: 480, color: '#ddd', fontFamily: 'inherit' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Close Maestrale?</div>
+              <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>The project has changed since it was last saved.</div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <Btn onClick={() => setAskClose(false)}>Cancel</Btn>
+                <Btn onClick={async () => { setDiscarding(true); await bridge.invoke('tr:project:recoverClear', undefined as never).catch(() => {}); bridge.send('tr:window:close', undefined as never); }}>Close without saving</Btn>
+                <button autoFocus onClick={async () => { if (await handleSave()) bridge.send('tr:window:close', undefined as never); }}
+                  style={{ padding: '5px 14px', borderRadius: 3, cursor: 'pointer', background: 'var(--lf-orange)', color: '#000', border: 'none', fontWeight: 700, fontFamily: 'inherit' }}>
+                  Save and close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Row 2: BPM strip ── */}
@@ -1261,7 +1318,10 @@ const make_styles = (): Record<string, React.CSSProperties> => ({
     position: 'relative',
   },
   bpmRow: {
-    height: 26,
+    // As tall as the row above, for touch: the whole strip is drawn 1.6× (zoom),
+    // so every control in it grows with it.
+    height: 31,
+    zoom: 1.6,
     display: 'flex',
     alignItems: 'center',
     gap: 6,

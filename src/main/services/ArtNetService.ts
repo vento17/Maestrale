@@ -50,7 +50,7 @@ export class ArtNetService {
   }
 
   // Every universe any output has touched — the DMX recorder samples these
-  // when it records LiveForge's own output.
+  // when it records Maestrale's own output.
   universesInUse(): number[] {
     const set = new Set<number>();
     for (const o of this.outputs.values()) for (const u of o.universes.keys()) set.add(u);

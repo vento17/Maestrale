@@ -30,7 +30,19 @@ export function registerProjectHandlers(): void {
       const { lastProject } = JSON.parse(await readFile(sessionPath, 'utf8')) as { lastProject?: string };
       if (lastProject) {
         const project = await svc.read(lastProject);
-        if (project) { currentPath = lastProject; return { project, path: lastProject, from: 'saved' as const }; }
+        if (project) {
+          currentPath = lastProject;
+          // Closed (or switched off) with changes not saved yet: the autosave of
+          // the same project holds them — start exactly as it was left.
+          // "Close without saving" deletes the autosave, so that one reopens saved.
+          try {
+            const r = await svc.read(recoveryPath);
+            if (r && r.id === project.id && JSON.stringify(r) !== JSON.stringify(project)) {
+              return { project: r, path: lastProject, from: 'resumed' as const };
+            }
+          } catch { /* no autosave */ }
+          return { project, path: lastProject, from: 'saved' as const };
+        }
       }
     } catch { /* no session yet */ }
     // Nothing saved yet: whatever was on screen last time (the autosave).
@@ -77,6 +89,20 @@ export function registerProjectHandlers(): void {
     }
   });
 
+  // Connection settings and Connect / Disconnect go straight into the project's
+  // file too: they are how this PC is wired, not an edit to keep or throw away.
+  ipcMain.handle('tr:project:patchConnections', async (_e, { connections, connected }) => {
+    if (!currentPath) return { ok: false };
+    try {
+      const p = await svc.read(currentPath);
+      if (!p) return { ok: false };
+      p.connections = connections;
+      p.connected = connected;
+      await svc.writeAtomic(currentPath, p);
+      return { ok: true };
+    } catch { return { ok: false }; }
+  });
+
   ipcMain.handle('tr:project:recoverClear', async () => {
     await svc.remove(recoveryPath);
     return { ok: true };
@@ -99,7 +125,7 @@ export function registerProjectHandlers(): void {
     const { filePath, canceled } = await dialog.showSaveDialog({
       title: 'Save Project As',
       defaultPath: currentPath || path.join(saveDir, `${safeName}.liveforge`),
-      filters: [{ name: 'LiveForge Project', extensions: ['liveforge', 'json'] }],
+      filters: [{ name: 'Maestrale Project', extensions: ['liveforge', 'json'] }],
     });
     if (canceled || !filePath) return { ok: false, path: '' };
     await svc.write(filePath, project);
@@ -113,7 +139,7 @@ export function registerProjectHandlers(): void {
   ipcMain.handle('tr:project:load', async () => {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       title: 'Open Project',
-      filters: [{ name: 'LiveForge Project', extensions: ['liveforge', 'surfrig', 'json'] }],
+      filters: [{ name: 'Maestrale Project', extensions: ['liveforge', 'surfrig', 'json'] }],
       properties: ['openFile'],
     });
     if (canceled || !filePaths[0]) return null;

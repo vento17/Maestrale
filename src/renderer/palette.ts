@@ -1,5 +1,6 @@
 // The interface palette: two colours the user can change in Settings →
-// Palette (kept on this computer). Every coloured value in the interface is a
+// Palette. Saved in the project (project.palette) and applied whenever a
+// project is loaded; New project brings back the default. Every coloured value in the interface is a
 // shade of one of two reference colours — laguna and fire orange. pal() maps a
 // shade of the reference onto the same shade of the chosen colour, so one pick
 // recolours the whole interface: bright, dim and tinted variants included.
@@ -27,7 +28,8 @@ function load(): Palette {
   return { ...DEFAULT_PALETTE };
 }
 
-let current: Palette = load();
+let current: Palette = { ...DEFAULT_PALETTE };
+void load;
 let version = 0;
 const cache = new Map<string, string>();
 const listeners = new Set<() => void>();
@@ -108,8 +110,11 @@ function applyCss(): void {
   } catch { /* no DOM (tests) */ }
 }
 
-export function setPalette(p: Palette, persist = true): void {
-  current = { accent: p.accent.toLowerCase(), highlight: p.highlight.toLowerCase() };
+export function setPalette(p: Palette, persist = false): void {
+  const next = { accent: p.accent.toLowerCase(), highlight: p.highlight.toLowerCase() };
+  // Loading a project with the same colours must not redraw the interface.
+  if (next.accent === current.accent && next.highlight === current.highlight) return;
+  current = next;
   cache.clear();
   version++;
   if (persist) {

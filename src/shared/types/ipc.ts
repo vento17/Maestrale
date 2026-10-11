@@ -15,6 +15,14 @@ export interface IpcChannels {
   'tr:project:save':          { req: Project;                    res: { ok: boolean; path: string } };
   'tr:project:saveQuick':     { req: Project;                    res: { ok: boolean; path: string } };
   'tr:project:forget':        { req: void;                       res: void };
+  'tr:shell:run':             { req: { action: string; arg?: string; delay?: number }; res: { ok: boolean; error?: string } };
+  'tr:app:autostart':         { req: boolean | null;             res: boolean };
+  'tr:window:minimize':       { req: void;                       res: void };
+  'tr:window:close':          { req: void;                       res: void };
+  'tr:window:state':          { req: void;                       res: { fullscreen: boolean; displays: number } };
+  'tr:window:toggleFullscreen': { req: void;                     res: void };
+  'tr:window:nextDisplay':    { req: void;                       res: void };
+  'tr:window:changed':        { req: never;                      res: { fullscreen: boolean; displays: number } };
   'tr:project:load':          { req: void;                       res: Project | null };
   'tr:project:export':        { req: Project;                    res: { ok: boolean; path: string } };
   'tr:project:backup':        { req: Project;                    res: { ok: boolean; path: string } };
@@ -22,7 +30,8 @@ export interface IpcChannels {
   // with the time it was written; recoverClear drops it once the work is safe.
   'tr:project:autosave':      { req: Project;                    res: { ok: boolean } };
   'tr:project:recoverRead':   { req: void;                       res: { project: Project; savedAt: string } | null };
-  'tr:project:openLast':      { req: void;                       res: { project: Project; path: string; from: 'saved' | 'autosave' } | null };
+  'tr:project:openLast':      { req: void;                       res: { project: Project; path: string; from: 'saved' | 'autosave' | 'resumed' } | null };
+  'tr:project:patchConnections': { req: { connections: Project['connections']; connected: Project['connected'] }; res: { ok: boolean } };
   'tr:project:recoverClear':  { req: void;                       res: { ok: boolean } };
 
   // Window
@@ -193,7 +202,7 @@ export interface DmxTakeInfo {
   source?: DmxRecSource;  // what it was recorded from
 }
 
-// What the DMX recorder records: an input, or what LiveForge itself sends.
+// What the DMX recorder records: an input, or what Maestrale itself sends.
 export type DmxRecSource = 'artnet' | 'sacn' | 'out-artnet' | 'out-sacn' | 'out-enttec';
 
 export interface DmxRecStatus {

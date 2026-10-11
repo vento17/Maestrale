@@ -4,6 +4,7 @@ import React, { useRef, useCallback, useState, useEffect } from 'react';
 import type { XYPadWidget } from '../../../shared/types/project';
 import { xyMapping } from '../../../shared/types/project';
 import { nanoid } from 'nanoid';
+import { stepMapping } from './xyPresets';
 
 // Dots after the first get their own colour, so several pan/tilt pairs read apart.
 export const XY_DOT_COLORS = MULTI.slice(1);
@@ -13,15 +14,15 @@ export function addXYDot(widget: XYPadWidget): void {
   const st = useStore.getState();
   const pageId = st.project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;
   if (!pageId) return;
+  st.captureHistory();
   const pts = widget.points ?? [];
   const n = 1 + pts.length;
-  const step = (m: XYPadWidget['mappingX'], by: number): XYPadWidget['mappingX'] => {
-    if (!m) return m;
-    if (m.type === 'midi') return { ...m, number: (m.number + by) % 128 };
-    if (m.type === 'artnet' || m.type === 'sacn' || m.type === 'enttec') return { ...m, channel: ((m.channel - 1 + by) % 512) + 1 };
-    if (m.type === 'osc') return { ...m, address: `${m.address.replace(/\/\d+$/, '')}/${n + 1}` };
-    return m;
-  };
+  const step = (m: XYPadWidget['mappingX'], by: number): XYPadWidget['mappingX'] => stepMapping(m, n, by);
+  // The Z slider is the last cell: it moves up past the new dot's two cells,
+  // its links and its value with it.
+  const zOld = 2 * n;
+  const zVal = widget.zSlider ? st.runtime.widgets[widget.id]?.cells[zOld]?.value : undefined;
+  if (widget.zSlider) st.moveCellLinks(widget.id, zOld, zOld + 2);
   st.updateWidget(pageId, widget.id, { points: [...pts, {
     id: nanoid(), mappingX: step(widget.mappingX, 2 * n), mappingY: step(widget.mappingY, 2 * n),
   }] } as never);
@@ -30,6 +31,7 @@ export function addXYDot(widget: XYPadWidget): void {
   queueMicrotask(() => {
     useStore.getState().setCellValue(widget.id, 2 * n, Math.max(0, Math.min(1, 0.5 + off)));
     useStore.getState().setCellValue(widget.id, 2 * n + 1, 0.5);
+    if (widget.zSlider) useStore.getState().setCellValue(widget.id, zOld + 2, zVal ?? 0.5);
   });
 }
 import { useStore, useWidgetRuntime } from '../../store';
@@ -94,12 +96,13 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
     setCellValue(widget.id, 2 * dot + 1, ny); dispatchValue(xyMapping(widget, 2 * dot + 1), ny);
   }, [widget, invertX, invertY, setCellValue]);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  const zW = widget.zSlider ? 44 : 0;
   return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
     <div
       ref={padRef}
       style={{
-        width: '100%', height: '100%',
-        position: 'relative',
+        position: 'absolute', left: 0, top: 0, bottom: 0, right: zW,
         touchAction: 'none',
         cursor: 'crosshair',
         overflow: 'hidden',
@@ -227,6 +230,35 @@ export default function XYPadLive({ widget }: { widget: XYPadWidget }): React.JS
           onClose={() => setMenu(null)}
         />
       )}
+    </div>
+    {widget.zSlider && <ZSlider widget={widget} width={zW} color={style.foregroundColor} />}
+    </div>
+  );
+}
+
+// The Z slider at the right edge: the pad's last cell (after every dot's X, Y).
+function ZSlider({ widget, width, color }: { widget: XYPadWidget; width: number; color: string }): React.JSX.Element {
+  const cell = 2 * (1 + (widget.points?.length ?? 0));
+  const runtime = useWidgetRuntime(widget.id);
+  const value = runtime?.cells[cell]?.value ?? 0.5;
+  const set = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const v = clamp(1 - (e.clientY - r.top) / r.height, 0, 1);
+    useStore.getState().setCellValue(widget.id, cell, v);
+    dispatchValue(xyMapping(widget, cell), v);
+  };
+  return (
+    <div data-lf-widget={widget.id} data-lf-cell={cell} title="Z — double-click: back to the middle"
+      onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); set(e); }}
+      onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) set(e); }}
+      onDoubleClick={() => { useStore.getState().setCellValue(widget.id, cell, 0.5); dispatchValue(xyMapping(widget, cell), 0.5); }}
+      style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width, touchAction: 'none', cursor: 'ns-resize',
+        borderLeft: `1px solid ${color}33`, background: 'rgba(0,0,0,0.25)' }}>
+      <div style={{ position: 'absolute', left: '50%', top: 8, bottom: 8, width: 4, marginLeft: -2, background: `${color}22`, borderRadius: 2 }} />
+      <div style={{ position: 'absolute', left: '50%', top: '50%', width: 12, height: 1, marginLeft: -6, background: `${color}66` }} />
+      <div style={{ position: 'absolute', left: 4, right: 4, height: 18, top: `calc(8px + ${(1 - value)} * (100% - 16px) - 9px)`,
+        background: color, borderRadius: 3, boxShadow: `0 0 8px ${color}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 10, fontWeight: 700, color: '#000', fontFamily: 'monospace' }}>Z</div>
     </div>
   );
 }

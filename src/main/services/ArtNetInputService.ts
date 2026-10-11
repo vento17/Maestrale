@@ -46,7 +46,7 @@ export class ArtNetInputService {
   ) {}
 
   // Universes announced in ArtPollReply, so a console or MadMapper in
-  // unicast mode discovers LiveForge as a node and sends to it.
+  // unicast mode discovers Maestrale as a node and sends to it.
   private advertised: number[] = [0];
   private boundHost = '0.0.0.0';
 
@@ -259,9 +259,9 @@ export function buildPollReply(ip: string, net: number, sub: number, universes: 
   b[18] = net & 0x7f;                         // NetSwitch
   b[19] = sub & 0x0f;                         // SubSwitch
   b[23] = 0xd0;                               // Status1: indicators normal, port-address by network
-  b.write('LiveForge', 26, 17, 'ascii');      // ShortName (18 incl. NUL)
-  b.write('LiveForge show control — Art-Net in', 44, 63, 'utf8');
-  b.write('#0001 [0000] LiveForge ready', 108, 63, 'ascii');
+  b.write('Maestrale', 26, 17, 'ascii');      // ShortName (18 incl. NUL)
+  b.write('Maestrale show control — Art-Net in', 44, 63, 'utf8');
+  b.write('#0001 [0000] Maestrale ready', 108, 63, 'ascii');
   b[173] = universes.length;                  // NumPortsLo
   universes.forEach((u, i) => {
     b[174 + i] = 0x80;                        // PortTypes: output (Art-Net → DMX), DMX512

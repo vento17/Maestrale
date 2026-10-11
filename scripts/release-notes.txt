@@ -1,28 +1,68 @@
-0.3.0 — router page, shift patching, Art-Net/sACN input, DMX record/play, new widgets
+0.4.0 — LiveForge is now Maestrale: ETC Eos surface, Shell / Palette / Merge,
+connections that come back, Ctrl+Z everywhere
 
-- Router page: every link in one sortable, searchable table; in/out ranges in real units
-- Shift patching: drag cables between outputs and inputs, double-click to unlink
-- Art-Net input with ArtPoll reply; sACN (E1.31) input with multicast and priority
-- Timeline GO / STOP / BACK as remote inputs; colour track as RGB, RGBW or split OSC
-- DMX Recorder (Art-Net or sACN) and DMX Player playlist with fades, end modes,
-  first/prev/stop/next inputs; recording folders chosen in Settings
-- Sound Player playlist with per-track end mode and fade
-- New widgets: Clock, DMX Monitor, Noise, Sketch, Audio Level
-- LFO with TouchDesigner-style inputs (play, freq, amp, offset, bias, phase, reset)
-- XY Pad with several dots; Step Sequencer and Graph with play/speed/reset inputs
-- Widget picker in columns with search; manual full screen with text size
-- DMX Recorder can also record LiveForge's own output (Art-Net, sACN, Open DMX)
-- New palette: black/grey/white + laguna aqua + fire orange
-- Top bar: Router · Log | protocol badges; log opens under the bar, red on errors
-- Shift patching hides widget text; X/Y dots grouped in pairs
-- Installations: reopens the last saved project at start, no questions;
-  "Open in Live mode at startup" project option; New button
-- Ctrl+S save (asks name and place the first time), Ctrl+Shift+S save as
-- Settings > Palette: pick the two interface colours, reset to default
-- Grid: positions and sizes snap to one absolute 8 px grid, edges line up
-- New widgets send OSC by default (/s1/1, /b1/1, /xy1/x, /lfo1 ...)
-- Noise seed; DMX Monitor defaults to the whole universe (16 x 32)
-- Copy/paste/undo shortcuts work with Caps Lock on
+- New name and new logo: LiveForge is Maestrale. Same program — projects saved
+  before the rename (.liveforge) open exactly as they are; on Windows the
+  portable build is now Maestrale.exe, in ../MaestraleExe
+- ETC widget: an Eos Gio @5 surface laid out like the desk. Every key sends
+  /eos/key/<name>; four encoders that page with the desk from Eos's own wheel
+  list, each with its own speed (Intensity x0.1, Pan/Tilt x20, Zoom x100, and
+  "Save as default" to keep yours); the vertical level wheel; the two cue
+  masters and a Grandmaster fader; GO and STOP as inputs, so a cue or a Clock
+  row can press them
+- Eos user, per widget: everything goes out as /eos/user/<n>/... so Maestrale
+  has its own selection and command line and does not fight whoever is at the
+  console — on the ETC and Encoder widgets, and on any widget sending to /eos/
+- Encoder widget: endless encoders that send only the change, never a value,
+  so the desk never jumps. Presets for Eos, grandMA3 and MIDI relative
+- Encoders at the screen edge: with a mouse the pointer is locked, so a drag
+  never runs out of room; with a finger, hold still and the encoder keeps
+  turning (upper/right half +, lower/left −), slide to speed up or turn back
+- Shell widget: buttons that act on the PC — turn off, restart, sleep,
+  hibernate, lock, screens off, close or restart Maestrale, open a file,
+  folder or web page, close a program, any command line. Turn off and restart
+  count down first and save where Maestrale is; each button is an input, so a
+  Clock row turns the PC off at 23:00
+- Palette widget: colour swatches, tap to pick, hold or right-click for a
+  colour wheel with RGB / CMY / HSV sliders. Every colour puts out R, G, B
+- Merge widget: drop as many cables as you like on one box; merges them in
+  groups (3 = R G B) HTP, LTP, lowest or average, with a smooth glide.
+  Palette → Merge (LTP, by 3, 0.5 s) → three faders = colour presets
+- Presets for the cell banks: Lights DMX (RGB, RGBW, moving head...),
+  ETC Eos (submasters, faders, channels, pan/tilt, macros, cues, GO/STOP,
+  channel and group select) and TouchDesigner (mixer, post FX, camera);
+  make, edit and delete your own, with a pattern that fills the addresses
+- XY Pad presets: Eos channel / group / selection pan-tilt and XYZ focus,
+  OSC /xyN, TouchDesigner cameras and lights, DMX moving head, MIDI CC.
+  Optional Z slider on the right edge, starting in the middle
+- Sketch: drawing presets (circle, spiral, star, Lissajous, random walk...),
+  Shift-drag to move a line and Ctrl-drag to scale it, and play backwards
+- Cues store what the generators are doing (sketch lines, LFO and noise
+  settings, step sequencer steps, graph points); exclude lists for cues and
+  submasters
+- Router outputs: smooth and spring, each a switch and a slider, with the
+  smooth running on the way up, both ways or on the way down
+- Router page: Tab walks down the column, link after link, or across the row
+- Installations: ports, IPs and which protocols were connected go into the
+  project file at once, so it reopens connected exactly as it was left, even
+  after a crash or a power cut; Settings has "Start Maestrale with Windows",
+  and Live mode at startup is on by default
+- Ctrl+Z everywhere, in Live as well as in Edit: a line drawn or cleared on a
+  Sketch, a cue, a submaster scene, a colour, a widget moved. 50 steps back
+- Enter in any field takes the value and leaves it — no more reaching for the
+  mouse after typing a number
+- Shift patching: a tap on Shift switches patching on and leaves it on (one
+  drag, one cable); holding Shift keeps the cable on the pointer for many
+  drops from one output; another tap saves everything at once
+- In Live, touching a widget anywhere — a control, its own bar, an empty
+  corner — shows its parameters on the right; the right-hand column can be
+  dragged wider and double-clicked back to normal
+- More in the Live right bar: Merge (mode, inputs per group, smooth), Sketch
+  (drawing preset, seconds per run, speed, loop, dots, delay, smooth) and
+  Palette (how many colours, per row, slider type)
+- Clock: a play button on each row fires it now, without waiting for the
+  time, and rows fire whatever page is on screen
+- Settings: the connection sections are outlined in the interface colour
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ETGEwquYRdYkhw21SvwUKf

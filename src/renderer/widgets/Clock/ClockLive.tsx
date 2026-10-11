@@ -29,30 +29,25 @@ function nowSec(d = new Date()): number {
 export default function ClockLive({ widget, preview = false }: { widget: ClockWidget; preview?: boolean }): React.JSX.Element {
   const [now, setNow] = useState(() => new Date());
   const [flash, setFlash] = useState<Record<string, number>>({});
-  const last = useRef(nowSec());
   const wRef = useRef(widget);
   wRef.current = widget;
 
   useEffect(() => {
-    const t = setInterval(() => {
-      const d = new Date();
-      setNow(d);
-      if (preview) return;
-      const prev = last.current, cur = nowSec(d);
-      last.current = cur;
-      const wrapped = cur < prev;   // passed midnight
-      wRef.current.alarms.forEach((a, i) => {
-        if (!a.enabled) return;
-        const at = secOfDay(a.time);
-        const hit = wrapped ? (at > prev || at <= cur) : (at > prev && at <= cur);
-        if (!hit) return;
-        const st = useStore.getState();
-        st.setCellValue(widget.id, i, 1);
-        setTimeout(() => useStore.getState().setCellValue(widget.id, i, 0), PULSE_MS);
-        setFlash((f) => ({ ...f, [a.id]: Date.now() }));
+    // The triggers themselves fire from ClockEngine (every page, any page on
+    // screen); here only the display and the flash of a row that fired.
+    const t = setInterval(() => setNow(new Date()), 200);
+    let prevVals: number[] = [];
+    const unsub = preview ? () => {} : useStore.subscribe((s) => {
+      const cells = s.runtime.widgets[widget.id]?.cells ?? [];
+      cells.forEach((c, i) => {
+        if ((prevVals[i] ?? 0) < 0.5 && c.value >= 0.5) {
+          const a = wRef.current.alarms[i];
+          if (a) setFlash((f) => ({ ...f, [a.id]: Date.now() }));
+        }
       });
-    }, 200);
-    return () => clearInterval(t);
+      prevVals = cells.map((c) => c.value);
+    });
+    return () => { clearInterval(t); unsub(); };
   }, [widget.id, preview]);
 
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -83,6 +78,7 @@ export function ClockAlarms({ widget, flash = {}, nextIdx = -1 }: {
     if (id) useStore.getState().updateWidget(id, widget.id, { alarms } as never);
   };
   const addAlarm = () => {
+    useStore.getState().captureHistory();
     const d = new Date(Date.now() + 60_000);
     const time = [d.getHours(), d.getMinutes(), 0].map((n) => String(n).padStart(2, '0')).join(':');
     setAlarms([...widget.alarms, { id: nanoid(), time, enabled: true }]);
@@ -129,7 +125,15 @@ function AlarmRow({ alarm, index, widgetId, fs, color, next, flashing, onPatch, 
   onPatch: (p: Partial<ClockAlarm>) => void; onRemove: () => void;
 }): React.JSX.Element {
   const [draft, setDraft] = useState(alarm.time);
+  const [fired, setFired] = useState(false);
   useEffect(() => setDraft(alarm.time), [alarm.time]);
+  // ▶ fires this row now (same pulse as when the clock gets there), to test
+  // what it is patched to without changing the time.
+  const fireNow = () => {
+    useStore.getState().setCellValue(widgetId, index, 1);
+    setTimeout(() => useStore.getState().setCellValue(widgetId, index, 0), PULSE_MS);
+    setFired(true); setTimeout(() => setFired(false), 400);
+  };
   const bad = normTime(draft) === null;
   const commit = () => {
     const t = normTime(draft);
@@ -140,7 +144,7 @@ function AlarmRow({ alarm, index, widgetId, fs, color, next, flashing, onPatch, 
       data-lf-widget={widgetId} data-lf-cell={index}
       style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, minHeight: 30,
-        background: flashing ? `${color}55` : next ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.35)',
+        background: flashing || fired ? `${color}55` : next ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.35)',
         borderLeft: `3px solid ${alarm.enabled ? color : '#333'}`, transition: 'background 0.3s',
         opacity: alarm.enabled ? 1 : 0.5,
       }}
@@ -152,9 +156,38 @@ function AlarmRow({ alarm, index, widgetId, fs, color, next, flashing, onPatch, 
       <input value={alarm.label ?? ''} placeholder="label" onChange={(e) => onPatch({ label: e.target.value })}
         style={{ flex: 1, minWidth: 0, height: 24, background: 'transparent', border: '1px solid #1f1f1f', color: '#bbb', fontFamily: 'inherit', fontSize: Math.max(10, fs - 3), padding: '0 6px' }} />
       {next && <span style={{ fontSize: 10, color: '#888' }}>next</span>}
+      <button onClick={fireNow} title="Fire now (test) — sends the trigger without waiting for the time"
+        style={{ height: 24, minWidth: 28, background: '#151515', border: `1px solid ${color}88`, borderRadius: 3, color, cursor: 'pointer', fontSize: 11, padding: '0 6px' }}>▶</button>
       <input type="checkbox" checked={alarm.enabled} onChange={(e) => onPatch({ enabled: e.target.checked })} title="Armed" />
       <button onClick={onRemove} title="Remove"
         style={{ background: 'none', border: 'none', color: '#744', cursor: 'pointer', fontSize: 13, padding: '0 2px' }}>✕</button>
     </div>
   );
+}
+
+// Fires every Clock's rows when the computer's clock passes them — for all
+// clocks in the project, whatever page is on screen (mounted in Live).
+export function ClockEngine(): null {
+  useEffect(() => {
+    let last = nowSec();
+    const t = setInterval(() => {
+      const cur = nowSec();
+      const prev = last;
+      last = cur;
+      const wrapped = cur < prev;   // passed midnight
+      for (const p of useStore.getState().project.pages) for (const w of p.widgets) {
+        if (w.kind !== 'clock') continue;
+        (w as ClockWidget).alarms.forEach((a, i) => {
+          if (!a.enabled) return;
+          const at = secOfDay(a.time);
+          const hit = wrapped ? (at > prev || at <= cur) : (at > prev && at <= cur);
+          if (!hit) return;
+          useStore.getState().setCellValue(w.id, i, 1);
+          setTimeout(() => useStore.getState().setCellValue(w.id, i, 0), PULSE_MS);
+        });
+      }
+    }, 200);
+    return () => clearInterval(t);
+  }, []);
+  return null;
 }

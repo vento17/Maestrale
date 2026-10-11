@@ -73,7 +73,7 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
   const faderValues = Array.from({ length: countX }, (_, i) => widgetRuntime?.cells[i]?.value ?? 0);
   const project = useStore((s) => s.project);
   // "All widgets · all pages" by default; narrowed in the settings.
-  const linkedWidgets = submasterTargets(project, { id: widget.id, linkedWidgetIds });
+  const linkedWidgets = submasterTargets(project, { id: widget.id, linkedWidgetIds, excludeWidgetIds: widget.excludeWidgetIds });
 
   const REC_COL_W = 48;
   const pad = Math.max(spacingX, spacingY);
@@ -137,12 +137,13 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
       const pid = project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;
       if (!pid) return;
       const snapshot: Record<string, number[]> = {};
-      for (const lw of submasterTargets(project, { id: widget.id, linkedWidgetIds })) {
+      for (const lw of submasterTargets(project, { id: widget.id, linkedWidgetIds, excludeWidgetIds: widget.excludeWidgetIds })) {
         const wid = lw.id;
         const wr = rt.widgets[wid];
         if (wr) snapshot[wid] = wr.cells.map((c) => c.value);
       }
       const newScenes = scenes.map((s, i) => i === sceneIdx ? { ...s, snapshot } : s);
+      useStore.getState().captureHistory();
       updateWidget(pid, widget.id, { scenes: newScenes } as never);
       setRecArmed(false);
     } else {
@@ -150,6 +151,7 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
       const pid = useStore.getState().project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;
       if (!pid) return;
       const newScenes = scenes.map((s, i) => i === sceneIdx ? { ...s, snapshot: {} } : s);
+      useStore.getState().captureHistory();
       updateWidget(pid, widget.id, { scenes: newScenes } as never);
       setDelArmed(false);
     }

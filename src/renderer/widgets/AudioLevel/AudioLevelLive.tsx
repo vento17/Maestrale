@@ -10,7 +10,7 @@ const DB_FLOOR = -60;
 export const levelToDb = (v: number): number => (v <= 0 ? -Infinity : DB_FLOOR * (1 - v));
 const fmtDb = (v: number): string => (v <= 0.001 ? '−∞ dB' : `${levelToDb(v).toFixed(1)} dB`);
 
-// OUT: master fader for all audio LiveForge plays (Sound Player, timeline).
+// OUT: master fader for all audio Maestrale plays (Sound Player, timeline).
 // IN:  meter of the audio input; its level (−60…0 dB as 0…1) is cell 0, a
 //      source to link anywhere — a light that breathes with the room.
 export default function AudioLevelLive({ widget }: { widget: AudioLevelWidget }): React.JSX.Element {

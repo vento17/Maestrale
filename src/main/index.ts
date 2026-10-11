@@ -1,8 +1,9 @@
-import { app, BrowserWindow, shell, session } from 'electron';
+import { app, BrowserWindow, shell, session, ipcMain } from 'electron';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { is } from '@electron-toolkit/utils';
 import { registerAllHandlers } from './ipc/router';
+import { savedDisplayBounds } from './ipc/windowHandlers';
 
 let mainWindow: BrowserWindow | null = null;
 let sidecar: ChildProcess | null = null;
@@ -72,7 +73,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    title: 'LiveForge',
+    title: 'Maestrale',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -82,6 +83,9 @@ function createWindow(): void {
 
   // Opens full screen (a show tool lives on the whole display). F11 toggles.
   mainWindow.on('ready-to-show', () => {
+    // Back on the screen it was on last time, if that screen is still there.
+    const b = savedDisplayBounds();
+    if (b) mainWindow!.setBounds({ x: b.x + 40, y: b.y + 40, width: Math.min(1440, b.width - 80), height: Math.min(900, b.height - 80) });
     mainWindow!.show();
     mainWindow!.setFullScreen(true);
   });
@@ -105,6 +109,10 @@ function createWindow(): void {
 
   registerAllHandlers(mainWindow);
 }
+
+// The top bar's own minimise / close — the window is full screen, with no title bar.
+ipcMain.on('tr:window:minimize', (e) => { BrowserWindow.fromWebContents(e.sender)?.minimize(); });
+ipcMain.on('tr:window:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.close(); });
 
 app.whenReady().then(() => {
   // Electron exposes camera + microphone access under the single 'media'

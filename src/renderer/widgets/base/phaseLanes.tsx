@@ -82,7 +82,7 @@ export function LaneBar({ widget, index, color, autoPhase }: { widget: LaneWidge
         <>
           {/* Drag sideways to shift the phase; double-click to type it. */}
           {editing !== null ? (
-            <input autoFocus value={editing} onChange={(e) => setEditing(e.target.value)}
+            <input autoFocus onFocus={(e) => e.currentTarget.select()} value={editing} onChange={(e) => setEditing(e.target.value)}
               onBlur={() => { const n = Number(editing.replace(',', '.')); if (Number.isFinite(n)) setLanePhase(widget, index - 1, n); setEditing(null); }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(null); }}
               style={{ width: 44, fontSize: 10, background: '#000', color: '#fff', border: `1px solid ${color}`, textAlign: 'center', fontFamily: 'inherit' }} />

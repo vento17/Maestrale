@@ -30,10 +30,15 @@ import MathWidgetLive from '../../widgets/MathWidget/MathWidgetLive';
 import ValueDisplayLive from '../../widgets/ValueDisplay/ValueDisplayLive';
 import SketchLive from '../../widgets/Sketch/SketchLive';
 import AudioLevelLive from '../../widgets/AudioLevel/AudioLevelLive';
+import EncoderLive from '../../widgets/Encoder/EncoderLive';
+import EtcLive from '../../widgets/Etc/EtcLive';
 import MasterLevelLive from '../../widgets/MasterLevel/MasterLevelLive';
 import InstanceLive from '../../widgets/Instance/InstanceLive';
 import ManualLive from '../../widgets/Manual/ManualLive';
 import KeyboardLive from '../../widgets/Keyboard/KeyboardLive';
+import ShellLive from '../../widgets/Shell/ShellLive';
+import PaletteLive from '../../widgets/Palette/PaletteLive';
+import MergeLive from '../../widgets/Merge/MergeLive';
 
 // The live rendering of a single widget's inner content (no positioning wrapper).
 // Shared by LiveCanvas and by the Instance widget (which renders its source here).
@@ -62,6 +67,8 @@ export default function LiveWidgetInner({ widget }: { widget: Widget }): React.J
     case 'masterLevel':   return <MasterLevelLive widget={widget as MasterLevelWidget} />;
     case 'sketch':        return <SketchLive widget={widget as SketchWidget} />;
     case 'audioLevel':    return <AudioLevelLive widget={widget as AudioLevelWidget} />;
+    case 'etc':           return <EtcLive widget={widget as import('../../../shared/types/project').EtcWidget} />;
+    case 'encoder':       return <EncoderLive widget={widget as import('../../../shared/types/project').EncoderWidget} />;
     case 'instance':      return <InstanceLive widget={widget as InstanceWidget} />;
     case 'keyboard':      return <KeyboardLive widget={widget as KeyboardWidget} />;
     case 'manual':        return <ManualLive widget={widget as ManualWidget} />;
@@ -69,6 +76,9 @@ export default function LiveWidgetInner({ widget }: { widget: Widget }): React.J
     case 'dmxPlayer':     return <DmxPlayerLive widget={widget as DmxPlayerWidget} />;
     case 'clock':         return <ClockLive widget={widget as ClockWidget} />;
     case 'dmxMonitor':    return <DmxMonitorLive widget={widget as DmxMonitorWidget} />;
+    case 'shell':         return <ShellLive widget={widget} />;
+    case 'palette':       return <PaletteLive widget={widget} />;
+    case 'merge':         return <MergeLive widget={widget} />;
     default:              return null;
   }
 }

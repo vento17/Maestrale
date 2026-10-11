@@ -43,7 +43,7 @@ function buildClientHtml(port: number): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>LiveForge Remote</title>
+<title>Maestrale Remote</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;}
@@ -61,7 +61,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:no
 </head>
 <body>
 <div id="status"></div>
-<div id="loading">LiveForge Remote</div>
+<div id="loading">Maestrale Remote</div>
 <img id="lf-frame" alt="">
 <div id="interact"></div>
 <script>
