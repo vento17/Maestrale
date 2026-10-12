@@ -266,7 +266,7 @@ export default function RouterEngine(): null {
       for (const row of allRouterRows()) {
         if (row.outputs.length === 0) continue;
         const inputType = row.inputType ?? 'widget';
-        if (inputType !== 'midiCC' && inputType !== 'midiNote') continue;
+        if (inputType !== 'midiCC' && inputType !== 'midiNote' && inputType !== 'midiPB') continue;
 
         const ch = row.midiChannel ?? 0;
         if (ch !== 0 && ch !== evt.channel) continue;
@@ -276,6 +276,10 @@ export default function RouterEngine(): null {
           if (evt.messageType !== 'controlChange') continue;
           if (row.midiNumber !== undefined && row.midiNumber !== evt.number) continue;
           v = evt.value / 127;
+        } else if (inputType === 'midiPB') {
+          // 14-bit: number = LSB, value = MSB → 0…16383.
+          if (evt.messageType !== 'pitchBend') continue;
+          v = ((evt.value << 7) | evt.number) / 16383;
         } else {
           if (evt.messageType !== 'noteOn' && evt.messageType !== 'noteOff') continue;
           if (row.midiNumber !== undefined && row.midiNumber !== evt.number) continue;

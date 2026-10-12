@@ -30,6 +30,7 @@ import MathWidgetLive from '../../widgets/MathWidget/MathWidgetLive';
 import ValueDisplayLive from '../../widgets/ValueDisplay/ValueDisplayLive';
 import SketchLive from '../../widgets/Sketch/SketchLive';
 import AudioLevelLive from '../../widgets/AudioLevel/AudioLevelLive';
+import IControlsLive from '../../widgets/IControls/IControlsLive';
 import EncoderLive from '../../widgets/Encoder/EncoderLive';
 import EtcLive from '../../widgets/Etc/EtcLive';
 import MasterLevelLive from '../../widgets/MasterLevel/MasterLevelLive';
@@ -67,6 +68,7 @@ export default function LiveWidgetInner({ widget }: { widget: Widget }): React.J
     case 'masterLevel':   return <MasterLevelLive widget={widget as MasterLevelWidget} />;
     case 'sketch':        return <SketchLive widget={widget as SketchWidget} />;
     case 'audioLevel':    return <AudioLevelLive widget={widget as AudioLevelWidget} />;
+    case 'iControls':     return <IControlsLive widget={widget} />;
     case 'etc':           return <EtcLive widget={widget as import('../../../shared/types/project').EtcWidget} />;
     case 'encoder':       return <EncoderLive widget={widget as import('../../../shared/types/project').EncoderWidget} />;
     case 'instance':      return <InstanceLive widget={widget as InstanceWidget} />;

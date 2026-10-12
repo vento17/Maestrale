@@ -8,6 +8,7 @@ import type { Widget, CuesWidget, TimelineWidget, SpoutInputWidget, NdiInputWidg
 import SliderBankDesign from '../SliderBank/SliderBankDesign';
 import SketchDesign from '../Sketch/SketchDesign';
 import AudioLevelDesign from '../AudioLevel/AudioLevelDesign';
+import IControlsLive from '../IControls/IControlsLive';
 import EncoderDesign from '../Encoder/EncoderDesign';
 import EtcLive from '../Etc/EtcLive';
 import MasterLevelDesign from '../MasterLevel/MasterLevelDesign';
@@ -62,6 +63,7 @@ export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX
       case 'masterLevel':      return <MasterLevelDesign widget={widget as MasterLevelWidget} />;
       case 'sketch':           return <SketchDesign widget={widget as SketchWidget} />;
       case 'audioLevel':       return <AudioLevelDesign widget={widget as AudioLevelWidget} />;
+      case 'iControls':        return <IControlsLive preview widget={widget} />;
       case 'etc':              return <EtcLive preview widget={widget as import('../../../shared/types/project').EtcWidget} />;
       case 'encoder':          return <EncoderDesign widget={widget as import('../../../shared/types/project').EncoderWidget} />;
       case 'instance':         return <InstanceDesign widget={widget as InstanceWidget} />;

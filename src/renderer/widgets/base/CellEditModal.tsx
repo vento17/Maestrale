@@ -115,6 +115,7 @@ function CellEditModalInner({ widgetId, pageId, onClose }: Props): React.JSX.Ele
                 {proto === 'osc'    && <Th style={{ minWidth: 200 }}>OSC Address</Th>}
                 {proto === 'artnet' && <><Th>Universe</Th><Th>Channel</Th></>}
                 {proto === 'sacn'   && <><Th>Universe</Th><Th>Channel</Th><Th>Priority</Th></>}
+                {proto === 'enttec' && <Th>DMX Channel</Th>}
                 {widget.kind === 'buttonGrid' && <><Th>Behavior</Th><Th>On</Th><Th>Off</Th></>}
               </tr>
             </thead>
@@ -162,6 +163,7 @@ function CellRow({ index, cell, proto, isButton, onChange }: {
   const osc  = m?.type === 'osc'  ? m : null;
   const an   = m?.type === 'artnet' ? m : null;
   const sacn = m?.type === 'sacn'   ? m : null;
+  const ent  = m?.type === 'enttec' ? m : null;
 
   return (
     <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -246,6 +248,14 @@ function CellRow({ index, cell, proto, isButton, onChange }: {
               onChange={(v) => onChange({ mapping: { ...sacn, type: 'sacn', universe: sacn?.universe ?? 1, channel: sacn?.channel ?? index + 1, minValue: 0, maxValue: 255, priority: v } })} />
           </Td>
         </>
+      )}
+
+      {proto === 'enttec' && (
+        <Td>
+          <NumberInput style={{ ...inp, width: 56 }} min={1} max={512}
+            value={ent?.channel ?? index + 1}
+            onChange={(v) => onChange({ mapping: { type: 'enttec', minValue: ent?.minValue ?? 0, maxValue: ent?.maxValue ?? 255, channel: v } })} />
+        </Td>
       )}
 
       {isButton && (

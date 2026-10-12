@@ -231,7 +231,7 @@ export default function GlobalBar(): React.JSX.Element {
     }
 
     function bind(t: NonNullable<typeof midiLearnTarget>, input: {
-      inputType: 'midiCC' | 'midiNote' | 'osc' | 'artnet' | 'sacn';
+      inputType: 'midiCC' | 'midiNote' | 'midiPB' | 'osc' | 'artnet' | 'sacn';
       midiChannel?: number; midiNumber?: number; oscAddress?: string;
       artnetUniverse?: number; artnetChannel?: number;
     }) {
@@ -287,10 +287,34 @@ export default function GlobalBar(): React.JSX.Element {
       });
     }
 
-    return bridge.on('tr:midi:inputEvent', (evt) => {
+    // Motorised / touch-sensitive faders (iCON, X-Touch, any Mackie-mode surface)
+    // send a touch NOTE the instant a finger lands, then the position as Pitch
+    // Bend or CC. Binding the first message would learn the touch (0/1), so a
+    // note is held back briefly: if a continuous message follows, that wins.
+    const NOTE_GRACE_MS = 400;
+    let pendingNote: ReturnType<typeof setTimeout> | null = null;
+    const cancelPending = () => { if (pendingNote) { clearTimeout(pendingNote); pendingNote = null; } };
+
+    const off = bridge.on('tr:midi:inputEvent', (evt) => {
       const t = useStore.getState().midiLearnTarget;
       if (!t) return;
+      if (evt.messageType === 'pitchBend') {
+        if (t.mappingKey) return;            // non-cell triggers only take CC/notes
+        cancelPending();
+        bind(t, { inputType: 'midiPB', midiChannel: evt.channel });
+        return;
+      }
       if (evt.messageType !== 'controlChange' && evt.messageType !== 'noteOn') return;
+      if (evt.messageType === 'noteOn' && !t.mappingKey) {
+        if (pendingNote) return;             // keep the first note, wait for movement
+        pendingNote = setTimeout(() => {
+          pendingNote = null;
+          const cur = useStore.getState().midiLearnTarget;
+          if (cur && cur === t) bind(cur, { inputType: 'midiNote', midiChannel: evt.channel, midiNumber: evt.number });
+        }, NOTE_GRACE_MS);
+        return;
+      }
+      cancelPending();
       if (t.mappingKey) {
         const mapping: MidiMapping = {
           type: 'midi',
@@ -307,6 +331,7 @@ export default function GlobalBar(): React.JSX.Element {
         midiNumber: evt.number,
       });
     });
+    return () => { cancelPending(); off(); };
   }, [midiLearnTarget]);
 
   // ─── Keyboard shortcuts ───────────────────────────────────────────────────

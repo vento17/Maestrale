@@ -10,6 +10,7 @@ import { cellCount, timelineTrigCells, timelineCueCells } from '../utils';
 import { takeName as takeNameOf } from '../../ipc/dmxTakes';
 import { paramInputsOf, paramInputOf } from './paramInputs';
 import { eachRouter } from './routers';
+import { iControlsCellLabel } from '../IControls/iControlsMidi';
 
 const BEAT_DIVS = [1, 2, 3, 4, 8, 16, 32, 64] as const;
 
@@ -54,6 +55,7 @@ export function cellLabel(w: Widget | undefined, cellIndex: number): string {
   if (w.kind === 'palette') return `${Math.floor(cellIndex / 3) + 1} ${'RGB'[cellIndex % 3]}`;
   if (w.kind === 'merge') return String(cellIndex + 1);
   if (w.kind === 'masterLevel') return 'level';
+  if (w.kind === 'iControls') return iControlsCellLabel(cellIndex);
   if (w.kind === 'sketch') {
     const axis = cellIndex % 2 === 0 ? 'X' : 'Y';
     return (w.dots || 1) > 1 ? `${Math.floor(cellIndex / 2) + 1} ${axis}` : axis;
@@ -247,6 +249,7 @@ export function describeRowSource(project: Project, row: RouterRow): { primary: 
   const t: RouterInputType = row.inputType ?? 'widget';
   if (t === 'midiCC')   return { primary: 'MIDI CC',   secondary: `ch${row.midiChannel ?? 1} #${row.midiNumber ?? 0}` };
   if (t === 'midiNote') return { primary: 'MIDI Note', secondary: `ch${row.midiChannel ?? 1} #${row.midiNumber ?? 0}` };
+  if (t === 'midiPB')   return { primary: 'MIDI Pitch Bend', secondary: `ch${row.midiChannel || 'any'}` };
   if (t === 'osc')      return { primary: 'OSC',       secondary: row.oscAddress ?? '—' };
   if (t === 'artnet')   return { primary: 'Art-Net',   secondary: `U${row.artnetUniverse ?? 0} ch${row.artnetChannel ?? 1}` };
   if (t === 'sacn')     return { primary: 'sACN',      secondary: `U${row.artnetUniverse ?? 1} ch${row.artnetChannel ?? 1}` };

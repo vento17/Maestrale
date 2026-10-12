@@ -12,12 +12,19 @@ For lighting, there is a full **ETC Eos** surface — every key, four encoders
 that page with the desk, the level wheel, the masters and the Grandmaster —
 plus endless **encoders** that send only the change, so the desk never jumps,
 and an **Eos user** of its own so Maestrale does not fight the operator.
-Colour presets come from a **Palette** of swatches through a **Merge** set to
-LTP, and a **Shell** widget switches the PC off at the end of the night from a
-Clock row: an installation boots into its show and puts itself to bed.
+A hardware surface comes in over MIDI: the **iControls** widget picks up an
+iCON iControls in Mackie mode, nine faders and nine knobs, each one a cell you
+can patch anywhere. Colour presets come from a **Palette** of swatches through
+a **Merge** set to LTP, and a **Shell** widget switches the PC off at the end
+of the night from a Clock row: an installation boots into its show and puts
+itself to bed.
 
-> Maestrale was called **LiveForge** up to v0.3.0. Same program, new name —
-> project files (`.liveforge`) still open as they are.
+## Download
+
+Ready-made builds are on the
+[Releases page](https://github.com/vento17/Maestrale/releases/latest):
+a portable `.exe` for Windows (nothing to install) and `.dmg` for macOS,
+Intel and Apple Silicon.
 
 ## Build
 
@@ -37,6 +44,7 @@ macOS: see [BUILD_MAC.md](BUILD_MAC.md). Windows `.exe` and macOS `.dmg`
 - **Spout / NDI** video input is **Windows-only**; those widgets are disabled on
   other platforms. NDI requires the separately-installed NDI runtime — it is not
   redistributed with the app.
+- Project files written by version 0.3 and earlier (`.liveforge`) open unchanged.
 
 ## License
 

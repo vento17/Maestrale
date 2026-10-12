@@ -13,7 +13,7 @@ import type {
   AudioAnalyserWidget, SoundPlayerWidget,
   LfoWidget, MathWidget, ValueDisplayWidget,
   MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget, DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget, EncoderWidget, EtcWidget,
-  ShellWidget, PaletteWidget, MergeWidget,
+  ShellWidget, PaletteWidget, MergeWidget, IControlsWidget,
 } from '../../shared/types/project';
 import { BEAT_DIVISORS } from '../../shared/types/project';
 import type { MidiMapping, OscMapping } from '../../shared/types/mapping';
@@ -26,7 +26,7 @@ import {
   DEFAULT_SPOUT_RECT, DEFAULT_NDI_RECT, DEFAULT_SUBMASTERS_RECT, DEFAULT_ROUTER_RECT,
   DEFAULT_AUTO_BPM_RECT, DEFAULT_AUDIO_ANALYSER_RECT, DEFAULT_SOUND_PLAYER_RECT,
   DEFAULT_LFO_RECT, DEFAULT_MATH_RECT, DEFAULT_VALUE_DISPLAY_RECT,
-  DEFAULT_MASTER_LEVEL_RECT, DEFAULT_AUDIO_LEVEL_RECT, DEFAULT_ENCODER_RECT, DEFAULT_SHELL_RECT, DEFAULT_PALETTE_RECT, DEFAULT_MERGE_RECT, DEFAULT_ETC_RECT, DEFAULT_SKETCH_RECT, DEFAULT_INSTANCE_RECT, DEFAULT_MANUAL_RECT,
+  DEFAULT_MASTER_LEVEL_RECT, DEFAULT_AUDIO_LEVEL_RECT, DEFAULT_ENCODER_RECT, DEFAULT_ICONTROLS_RECT, DEFAULT_SHELL_RECT, DEFAULT_PALETTE_RECT, DEFAULT_MERGE_RECT, DEFAULT_ETC_RECT, DEFAULT_SKETCH_RECT, DEFAULT_INSTANCE_RECT, DEFAULT_MANUAL_RECT,
   DEFAULT_KEYBOARD_RECT, DEFAULT_DMX_RECORDER_RECT, DEFAULT_DMX_PLAYER_RECT, DEFAULT_CLOCK_RECT, DEFAULT_DMX_MONITOR_RECT,
 } from '../../shared/constants';
 
@@ -496,6 +496,18 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         loop: true,
         showGrid: true,
       } satisfies SketchWidget;
+    }
+    case 'iControls': {
+      return {
+        id, zIndex, kind: 'iControls',
+        label: 'iControls',
+        rect: { ...DEFAULT_ICONTROLS_RECT },
+        style: { ...DEFAULT_WIDGET_STYLE },
+        outputProtocol: 'midi',
+        mapping: null,
+        feedbackRules: [],
+        knobStep: 1 / 127,
+      } satisfies IControlsWidget;
     }
     case 'audioLevel': {
       return {

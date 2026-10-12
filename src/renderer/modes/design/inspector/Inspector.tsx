@@ -103,6 +103,8 @@ export default function Inspector(): React.JSX.Element {
                                               ? <EtcInspectorPanel widget={widget as import('../../../../shared/types/project').EtcWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'encoder'
                                               ? <EncoderInspectorPanel widget={widget as import('../../../../shared/types/project').EncoderWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                              : widget.kind === 'iControls'
+                                              ? <IControlsInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'audioLevel'
                                               ? <AudioLevelInspectorPanel widget={widget as import('../../../../shared/types/project').AudioLevelWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                               : widget.kind === 'instance'
@@ -1976,6 +1978,7 @@ function SettingsPanel() {
   const [midiPorts,       setMidiPorts]       = useState<string[] | null>(null);
   const [midiInputPorts,  setMidiInputPorts]  = useState<string[] | null>(null);
   const [enttecDevices,   setEnttecDevices]   = useState<{ index: number; description: string; serialNumber: string }[] | null>(null);
+  const [enttecError,     setEnttecError]     = useState<string | null>(null);
 
   const conn = {
     midi:        project.connections.find((c) => c.type === 'midi')        as MidiConnection        | undefined,
@@ -2163,9 +2166,11 @@ function SettingsPanel() {
       const res = await bridge.invoke('tr:enttec:connect', { deviceIndex: idx });
       const status = res.ok ? 'ok' : 'error';
       setEnttecStatus(status);
+      setEnttecError(res.ok ? null : (res.error ?? 'Connection failed').replace(/^Error:\s*/, ''));
       if (status === 'ok') setConnectedProtocol('enttec', true);
-    } catch {
+    } catch (e) {
       setEnttecStatus('error');
+      setEnttecError(String(e));
     }
   }
 
@@ -2560,9 +2565,9 @@ function SettingsPanel() {
           onClick={async () => {
             try {
               const res = await bridge.invoke('tr:enttec:listDevices', undefined as never);
-              if (res.ok) setEnttecDevices(res.devices);
-              else setEnttecDevices([]);
-            } catch { setEnttecDevices([]); }
+              setEnttecDevices(res.ok ? res.devices : []);
+              setEnttecError(res.ok ? null : (res.error ?? 'Scan failed').replace(/^Error:\s*/, ''));
+            } catch (e) { setEnttecDevices([]); setEnttecError(String(e)); }
           }}
           style={{ ...styles.input, cursor: 'pointer', marginBottom: 6, textAlign: 'left', background: 'var(--color-surface-2)' }}
         >
@@ -2601,6 +2606,11 @@ function SettingsPanel() {
           </ConnectBtn>
           <StatusBadge status={enttecStatus} />
         </div>
+        {enttecError && (
+          <div style={{ fontSize: 12, color: '#ff7700', marginTop: 6, lineHeight: 1.4, wordBreak: 'break-word' }}>
+            {enttecError}
+          </div>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection label="Audio Input" proto>
@@ -3680,6 +3690,7 @@ function RouterInspectorPanel({ widget, activePageId, updateWidget, updateWidget
                   <option value="widget">Widget Cell</option>
                   <option value="midiCC">MIDI CC</option>
                   <option value="midiNote">MIDI Note</option>
+                  <option value="midiPB">MIDI Pitch Bend</option>
                   <option value="osc">OSC</option>
                   <option value="artnet">Art-Net in</option>
                   <option value="sacn">sACN in</option>
@@ -3728,7 +3739,7 @@ function RouterInspectorPanel({ widget, activePageId, updateWidget, updateWidget
                   one another cell by cell; other outputs follow the first cell only.
                 </div>
               )}
-              {(inputType === 'midiCC' || inputType === 'midiNote') && (
+              {(inputType === 'midiCC' || inputType === 'midiNote' || inputType === 'midiPB') && (
                 <div style={{ display: 'flex', gap: 4, marginBottom: 4, marginLeft: 22 }}>
                   <Field label="Ch (0=any)">
                     <NumInput
@@ -3737,6 +3748,7 @@ function RouterInspectorPanel({ widget, activePageId, updateWidget, updateWidget
                       onChange={(v) => updateRow(row.id, { midiChannel: Math.max(0, Math.min(16, v)) })}
                     />
                   </Field>
+                  {inputType !== 'midiPB' && (
                   <Field label={inputType === 'midiCC' ? 'CC' : 'Note'}>
                     <NumInput
                       value={row.midiNumber ?? 0}
@@ -3744,6 +3756,7 @@ function RouterInspectorPanel({ widget, activePageId, updateWidget, updateWidget
                       onChange={(v) => updateRow(row.id, { midiNumber: Math.max(0, Math.min(127, v)) })}
                     />
                   </Field>
+                  )}
                 </div>
               )}
               {(inputType === 'artnet' || inputType === 'sacn') && (
@@ -5048,6 +5061,44 @@ function EncoderInspectorPanel({ widget, activePageId, updateWidget, updateWidge
       <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
       <Section label="Encoders">
         <EncoderSettings w={widget} update={patch} />
+      </Section>
+    </>
+  );
+}
+
+function IControlsInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: import('../../../../shared/types/project').IControlsWidget;
+  activePageId: string;
+  updateWidget: StoreState['updateWidget'];
+  updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  function patch(p: Partial<import('../../../../shared/types/project').IControlsWidget>) { updateWidget(activePageId, widget.id, p as never); }
+  const ticksPerTurn = Math.round(1 / (widget.knobStep > 0 ? widget.knobStep : 1 / 127));
+  const ccs = widget.knobCcs?.length === 9 ? widget.knobCcs : [16, 17, 18, 19, 20, 21, 22, 23, 60];
+  return (
+    <>
+      <div style={styles.header}>iCON iControls</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Knobs">
+        <Field label="Ticks from 0 to full">
+          <NumInput value={ticksPerTurn} min={8} max={2000}
+            onChange={(v) => patch({ knobStep: 1 / Math.max(8, Math.min(2000, v)) })} />
+        </Field>
+        <Field label="Knob CCs (1–9)">
+          <input key={ccs.join(' ')} style={styles.input} defaultValue={ccs.join(' ')}
+            onBlur={(e) => {
+              const n = e.target.value.split(/[\s,]+/).filter(Boolean).map(Number);
+              if (n.length === 9 && n.every((x) => Number.isInteger(x) && x >= 0 && x <= 127)) patch({ knobCcs: n });
+            }} />
+        </Field>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+          Set the surface to Mackie mode and pick it as MIDI input in Settings. Faders 1–8 and the master read Pitch Bend
+          on MIDI channels 1–9 (14-bit); touching a cap only lights the fader. Knobs are relative: 1–8 are the V-Pots
+          (CC 16–23), knob 9 the jog (CC 60). Every fader and knob is an output — Shift-drag from its dot, or right-click it.
+        </div>
       </Section>
     </>
   );

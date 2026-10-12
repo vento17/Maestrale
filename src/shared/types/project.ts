@@ -29,7 +29,7 @@ export interface WidgetStyle {
 
 // ─── Widget Types ─────────────────────────────────────────────────────────────
 
-export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor' | 'encoder' | 'etc' | 'shell' | 'palette' | 'merge';
+export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor' | 'encoder' | 'etc' | 'shell' | 'palette' | 'merge' | 'iControls';
 
 // ─── Widget Base ──────────────────────────────────────────────────────────────
 
@@ -463,7 +463,9 @@ export interface TextWidget extends WidgetBase {
 // ─── Router ───────────────────────────────────────────────────────────────────
 // Routes a signal (widget cell, MIDI input, or OSC input) to one or more outputs.
 
-export type RouterInputType = 'widget' | 'midiCC' | 'midiNote' | 'osc' | 'artnet' | 'sacn';
+// midiPB = Pitch Bend (14-bit). Mackie-mode surfaces (iCON, Behringer X-Touch…)
+// send their faders this way, one MIDI channel per fader.
+export type RouterInputType = 'widget' | 'midiCC' | 'midiNote' | 'midiPB' | 'osc' | 'artnet' | 'sacn';
 
 export interface RouterOutput {
   id: string;
@@ -505,7 +507,7 @@ export interface RouterRow {
   allCells?: boolean;
   // MIDI source (midiCC / midiNote):
   midiChannel?: number;   // 1-16; 0 = any channel
-  midiNumber?: number;    // 0-127 (CC number or note number)
+  midiNumber?: number;    // 0-127 (CC number or note number; unused for midiPB)
   // OSC source:
   oscAddress?: string;    // exact address to listen on, e.g. "/fader1"
   // Art-Net source: one DMX channel, 0–255 read as 0–1.
@@ -755,7 +757,8 @@ export type Widget =
   | SketchWidget
   | ShellWidget
   | PaletteWidget
-  | MergeWidget;
+  | MergeWidget
+  | IControlsWidget;
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 // Buttons that run an action on the PC (turn off, restart, open a file…). Each
@@ -829,6 +832,16 @@ export interface AudioLevelWidget extends WidgetBase {
   mode: 'in' | 'out';
   deviceId?: string;          // IN: '' = the Audio in device from Settings
   orientation?: 'vertical' | 'horizontal';
+}
+
+// ─── iCON iControls ───────────────────────────────────────────────────────────
+// Mirror of an iCON iControls / iControls Pro in Mackie mode. Cells 0–8 are the
+// 8 faders + master (Pitch Bend on MIDI ch 1–9, 14-bit), cells 9–17 the 9 knobs
+// (relative CC). Every cell is an output to patch anywhere.
+export interface IControlsWidget extends WidgetBase {
+  kind: 'iControls';
+  knobStep: number;     // value change per knob tick, 0–1 (1/127 = one MIDI step)
+  knobCcs?: number[];   // CC of knobs 1–9; default 16–23 (V-Pots) + 60 (jog)
 }
 
 // ─── Encoder ──────────────────────────────────────────────────────────────────

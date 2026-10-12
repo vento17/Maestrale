@@ -11,7 +11,7 @@ const KIND_LABEL_PREFIX: Partial<Record<WidgetKind, string>> = {
   stepSequencer: 'seq', graphWidget: 'graph', cues: 'cues', timeline: 'timeline',
   spoutInput: 'spout', ndiInput: 'ndi', submasters: 'sub', router: 'router',
   imageWidget: 'image', textWidget: 'text', masterLevel: 'master', audioLevel: 'audio', noiseWidget: 'noise', sketch: 'sketch', instance: 'instance',
-  lfoWidget: 'lfo', mathWidget: 'math', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge',
+  lfoWidget: 'lfo', mathWidget: 'math', encoder: 'encoder', iControls: 'icontrols', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge',
   manual: 'manual', keyboard: 'keys', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', dmxMonitor: 'monitor',
 };
 
@@ -499,11 +499,18 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
       );
     }
 
-    // Cells added to an OSC bank get OSC addresses, not the MIDI defaults.
-    if (widget.outputProtocol === 'osc') {
-      const num = widgetLabelNum(widget.label);
-      (newCells as { mapping: unknown }[]).forEach((c, i) => { if (i >= oldCells.length) c.mapping = defaultOscMapping(widget.kind, num, i); });
-    }
+    // Cells added to a bank follow the bank's protocol. Only a MIDI bank keeps
+    // the MIDI defaults that makeSliderCells() and friends hand out — before
+    // this, a DMX bank grew cells that quietly spoke MIDI.
+    const num = widgetLabelNum(widget.label);
+    (newCells as { mapping: unknown }[]).forEach((c, i) => {
+      if (i < oldCells.length) return;
+      const proto = widget.outputProtocol;
+      if      (proto === 'osc')    c.mapping = defaultOscMapping(widget.kind, num, i);
+      else if (proto === 'enttec') c.mapping = { type: 'enttec', channel: (baseCC + i) % 512 + 1, minValue: 0, maxValue: 255 };
+      else if (proto === 'artnet') c.mapping = { type: 'artnet', universe: 0, channel: (baseCC + i) % 512 + 1, minValue: 0, maxValue: 255 };
+      else if (proto === 'sacn')   c.mapping = { type: 'sacn', universe: 1, channel: (baseCC + i) % 512 + 1, minValue: 0, maxValue: 255, priority: 100 };
+    });
     Object.assign(widget, { countX, countY, cells: newCells });
     touchUpdatedAt(s.project);
   }),

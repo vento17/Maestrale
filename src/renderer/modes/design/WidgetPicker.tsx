@@ -26,6 +26,7 @@ const WIDGET_GROUPS: { title: string; col?: number; items: WidgetOption[] }[] = 
     { kind: 'knobBank',      label: 'Knob Bank',      description: 'Bank of rotary knobs — drag up/right to raise, down/left to lower.' },
     { kind: 'buttonGrid',    label: 'Button Grid',    description: 'Grid of momentary, toggle, pulse or radio buttons with per-cell colours.' },
     { kind: 'etc',           label: 'ETC',            description: 'An ETC Eos Gio @5 surface laid out like the desk: every key, the four encoders and the two masters, already sending Eos OSC.' },
+    { kind: 'iControls',     label: 'iCON iControls', description: 'The iCON iControls (Pro) in Mackie mode: 8 touch faders + master and 9 knobs, each one an output to patch anywhere. Faders read at 14-bit.' },
     { kind: 'encoder',       label: 'Encoder',        description: 'Endless encoders for a lighting desk: they send only the change (+3, −1), so the desk value never jumps. OSC or MIDI relative, presets for Eos / grandMA3.' },
     { kind: 'palette',       label: 'Palette',        description: 'Colour swatches: tap one to pick it, hold (or right-click) to edit it. Each colour puts out R, G, B — into a Merge for colour presets.' },
     { kind: 'xyPad',         label: 'XY Pad',         description: 'Two-axis touch surface — X and Y each drive their own output.' },

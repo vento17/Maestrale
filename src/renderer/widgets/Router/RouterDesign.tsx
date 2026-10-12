@@ -46,6 +46,7 @@ function sourceLabel(row: RouterRow, src: Widget | undefined): { primary: string
   const t = row.inputType ?? 'widget';
   if (t === 'midiCC')   return { primary: 'MIDI CC',   secondary: `ch${row.midiChannel ?? 1} #${row.midiNumber ?? 0}` };
   if (t === 'midiNote') return { primary: 'MIDI Note', secondary: `ch${row.midiChannel ?? 1} #${row.midiNumber ?? 0}` };
+  if (t === 'midiPB')   return { primary: 'MIDI Pitch Bend', secondary: `ch${row.midiChannel || 'any'}` };
   if (t === 'osc')      return { primary: 'OSC',       secondary: row.oscAddress ?? '—' };
   if (t === 'artnet')   return { primary: 'Art-Net',   secondary: `U${row.artnetUniverse ?? 0} ch${row.artnetChannel ?? 1}` };
   if (t === 'sacn')     return { primary: 'sACN',      secondary: `U${row.artnetUniverse ?? 1} ch${row.artnetChannel ?? 1}` };

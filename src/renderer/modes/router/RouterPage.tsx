@@ -35,7 +35,7 @@ const KIND_NAME: Partial<Record<Widget['kind'], string>> = {
   stepSequencer: 'step sequencer', graphWidget: 'graph', submasters: 'submasters',
   autoBpm: 'auto bpm', timeline: 'timeline', audioAnalyser: 'audio analyser',
   soundPlayer: 'sound player', cues: 'cues', lfoWidget: 'lfo', noiseWidget: 'noise', sketch: 'sketch', mathWidget: 'math',
-  masterLevel: 'master', audioLevel: 'audio level', keyboard: 'keyboard', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge',
+  masterLevel: 'master', audioLevel: 'audio level', keyboard: 'keyboard', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge', iControls: 'icontrols',
 };
 const PARAM_NAME: Partial<Record<Widget['kind'], string>> = {
   sliderBank: 'fader', knobBank: 'knob', buttonGrid: 'button', xyPad: 'axis',
@@ -58,7 +58,7 @@ const PROTO_COLOR: Record<Proto, string> = {
 
 function srcProto(row: RouterRow): Proto {
   const t = row.inputType ?? 'widget';
-  if (t === 'midiCC' || t === 'midiNote') return 'midi';
+  if (t === 'midiCC' || t === 'midiNote' || t === 'midiPB') return 'midi';
   if (t === 'osc') return 'osc';
   if (t === 'artnet') return 'artnet';
   if (t === 'sacn') return 'sacn';
@@ -106,6 +106,7 @@ function describeSource(row: RouterRow, idx: Map<string, { w: Widget; page: stri
   const t: RouterInputType = row.inputType ?? 'widget';
   if (t === 'midiCC')   return { main: `CC ${row.midiNumber ?? 0}`, sub: `ch ${row.midiChannel || 'any'}`, page: '' };
   if (t === 'midiNote') return { main: `Note ${row.midiNumber ?? 0}`, sub: `ch ${row.midiChannel || 'any'}`, page: '' };
+  if (t === 'midiPB')   return { main: 'Pitch Bend', sub: `ch ${row.midiChannel || 'any'}`, page: '' };
   if (t === 'osc')      return { main: row.oscAddress || '/…', sub: '', page: '' };
   if (t === 'artnet' || t === 'sacn') return { main: `U${row.artnetUniverse ?? (t === 'sacn' ? 1 : 0)} · ch ${row.artnetChannel ?? 1}`, sub: '', page: '' };
   const e = idx.get(row.widgetId);
@@ -768,8 +769,11 @@ function ProtoForm({ proto, isSrc, link, onDone, ownRow }: {
   const same = isSrc ? link.src === proto : link.dst === proto;
 
   // Start from what the link has now when it is already this protocol.
-  const [midiKind, setMidiKind] = useState<'cc' | 'note'>(
-    isSrc ? (row.inputType === 'midiNote' ? 'note' : 'cc') : (m?.type === 'midi' && (m as MidiMapping).messageType === 'noteOn' ? 'note' : 'cc'));
+  const [midiKind, setMidiKind] = useState<'cc' | 'note' | 'pb'>(
+    isSrc
+      ? (row.inputType === 'midiNote' ? 'note' : row.inputType === 'midiPB' ? 'pb' : 'cc')
+      : (m?.type === 'midi' && (m as MidiMapping).messageType === 'noteOn' ? 'note'
+        : m?.type === 'midi' && (m as MidiMapping).messageType === 'pitchBend' ? 'pb' : 'cc'));
   const [ch, setCh] = useState<number>(same
     ? (isSrc ? (proto === 'artnet' || proto === 'sacn' ? row.artnetChannel ?? 1 : row.midiChannel ?? 0) : Number(m?.channel ?? 1))
     : (proto === 'midi' ? (isSrc ? 0 : 1) : 1));
@@ -782,7 +786,7 @@ function ProtoForm({ proto, isSrc, link, onDone, ownRow }: {
     st.captureHistory();
     if (isSrc) {
       const rowId = ownRow();
-      if (proto === 'midi') st.updateRouterRow(link.routerId, rowId, { inputType: midiKind === 'cc' ? 'midiCC' : 'midiNote', midiChannel: ch, midiNumber: num, widgetId: '', allCells: false });
+      if (proto === 'midi') st.updateRouterRow(link.routerId, rowId, { inputType: midiKind === 'cc' ? 'midiCC' : midiKind === 'pb' ? 'midiPB' : 'midiNote', midiChannel: ch, midiNumber: num, widgetId: '', allCells: false });
       if (proto === 'osc') st.updateRouterRow(link.routerId, rowId, { inputType: 'osc', oscAddress: addr, widgetId: '', allCells: false });
       if (proto === 'artnet') st.updateRouterRow(link.routerId, rowId, { inputType: 'artnet', artnetUniverse: num, artnetChannel: ch, widgetId: '', allCells: false });
       if (proto === 'sacn') st.updateRouterRow(link.routerId, rowId, { inputType: 'sacn', artnetUniverse: Math.max(1, num), artnetChannel: ch, widgetId: '', allCells: false });
@@ -790,7 +794,9 @@ function ProtoForm({ proto, isSrc, link, onDone, ownRow }: {
       // Native full range by default, so OSC→MIDI is 0–1 → 0–127 straight away.
       const keep = same && m ? { minValue: m.minValue, maxValue: m.maxValue } : null;
       let mapping: Mapping = null;
-      if (proto === 'midi') mapping = { type: 'midi', messageType: midiKind === 'cc' ? 'controlChange' : 'noteOn', channel: Math.max(1, ch), number: num, minValue: 0, maxValue: 127, ...(keep as object) };
+      if (proto === 'midi') mapping = midiKind === 'pb'
+        ? { type: 'midi', messageType: 'pitchBend', channel: Math.max(1, ch), number: 0, minValue: 0, maxValue: 16383 }
+        : { type: 'midi', messageType: midiKind === 'cc' ? 'controlChange' : 'noteOn', channel: Math.max(1, ch), number: num, minValue: 0, maxValue: 127, ...(keep as object) };
       if (proto === 'osc') mapping = { type: 'osc', address: addr, minValue: 0, maxValue: 1, ...(keep as object) };
       if (proto === 'artnet') mapping = { type: 'artnet', universe: num, channel: ch, minValue: 0, maxValue: 255, ...(keep as object) };
       if (proto === 'sacn') mapping = { type: 'sacn', universe: Math.max(1, num), channel: ch, minValue: 0, maxValue: 255, priority: 100, ...(keep as object) };
@@ -819,10 +825,11 @@ function ProtoForm({ proto, isSrc, link, onDone, ownRow }: {
           <div style={{ display: 'flex', gap: 4 }}>
             <Chip on={midiKind === 'cc'} color={PROTO_COLOR.midi} onClick={() => setMidiKind('cc')}>CC</Chip>
             <Chip on={midiKind === 'note'} color={PROTO_COLOR.midi} onClick={() => setMidiKind('note')}>Note</Chip>
+            <Chip on={midiKind === 'pb'} color={PROTO_COLOR.midi} onClick={() => setMidiKind('pb')}>Pitch Bend</Chip>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {field(isSrc ? 'channel (0 = any)' : 'channel', ch, setCh, isSrc ? 0 : 1, 16)}
-            {field(midiKind === 'cc' ? 'CC number' : 'note', num, setNum, 0, 127)}
+            {midiKind !== 'pb' && field(midiKind === 'cc' ? 'CC number' : 'note', num, setNum, 0, 127)}
           </div>
         </>
       )}

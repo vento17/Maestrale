@@ -1,14 +1,9 @@
 @echo off
 rem Publishes the current folder to GitHub as a new version of Maestrale.
-rem Usage: double-click, or "scripts\publish.bat 0.4.0"
-rem
-rem FIRST TIME ONLY: make the empty repository on GitHub, or this stops at the
-rem push and tells you so. Open https://github.com/new , name it exactly
-rem   Maestrale
-rem leave "Add a README" and the other tick boxes OFF, and press Create.
+rem Usage: double-click, or "scripts\publish.bat 0.4.1"
 cd /d "%~dp0.."
 set VER=%1
-if "%VER%"=="" set VER=0.4.0
+if "%VER%"=="" set VER=0.4.1
 set REPO=https://github.com/vento17/Maestrale.git
 echo === Maestrale %VER% ===
 
@@ -24,22 +19,33 @@ if "%CURRENT%"=="" (
   git remote add origin %REPO% || goto :err
 )
 
+rem Anything edited on github.com itself comes down first, or the push is
+rem rejected for being behind.
+echo Picking up what is already on GitHub...
+git pull --ff-only origin main || goto :pullerr
+
 git add -A || goto :err
 git commit -F scripts\release-notes.txt || echo (nothing new to commit)
-git tag -a v%VER% -m "Maestrale %VER%" || goto :err
+git tag -f -a v%VER% -m "Maestrale %VER%" || goto :err
 git push -u origin HEAD || goto :pusherr
-git push origin v%VER% || goto :err
+git push origin v%VER% --force || goto :err
 echo.
 echo Done: v%VER% is on GitHub - https://github.com/vento17/Maestrale
-echo The exe and the dmg are built by Actions and land in Releases.
+echo The exe and the dmgs are built by Actions and land in Releases in about
+echo fifteen minutes: https://github.com/vento17/Maestrale/actions
 pause
 exit /b 0
 
+:pullerr
+echo.
+echo Could not pull. If it complains about local changes to a file that also
+echo changed on GitHub, tell Claude which file it named.
+pause
+exit /b 1
+
 :pusherr
 echo.
-echo The push did not go through. Nine times out of ten the repository is not
-echo there yet: open https://github.com/new , call it Maestrale, create it
-echo empty, then run this file again.
+echo The push did not go through. Copy the text above to Claude.
 pause
 exit /b 1
 
