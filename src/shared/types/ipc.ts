@@ -118,6 +118,7 @@ export interface IpcChannels {
   'tr:enttec:connect':        { req: { deviceIndex: number };    res: { ok: boolean; error?: string } };
   'tr:enttec:disconnect':     { req: void;                       res: { ok: boolean } };
   'tr:enttec:sendChannel':    { req: EnttecChannelPayload;       res: void };
+  'tr:enttec:sendChannels':   { req: EnttecChannelsPayload;      res: void };
 
   // Network Live server
   'tr:net:start':             { req: { port: number };           res: { ok: boolean; ip: string; port: number; error?: string } };
@@ -324,6 +325,14 @@ export interface EnttecListDevicesRes {
 export interface EnttecChannelPayload {
   channel: number;  // 1–512
   value: number;    // 0–255
+}
+
+// Dragging a fader fires a pointer event per mouse report — hundreds a second on
+// a high-polling mouse — and one IPC message each would starve the main process,
+// which is where the DMX frame timer lives. The renderer folds a burst into one
+// of these instead: last value wins per channel.
+export interface EnttecChannelsPayload {
+  channels: EnttecChannelPayload[];
 }
 
 // ─── Network Live Payloads ────────────────────────────────────────────────────

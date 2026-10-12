@@ -2,6 +2,26 @@ import midi from '@julusian/midi';
 import type { MidiPortInfo } from '../../shared/types/runtime';
 import type { MidiInputEventPayload, MtcFramePayload } from '../../shared/types/ipc';
 
+// RtMidi puts the port's INDEX on the end of its name: "iCON iControls 1",
+// "MIDIIN2 (iCON iControls) 2". So the name a project saves is not a stable
+// identifier — plug or unplug any other MIDI device and the ports renumber,
+// and the saved string now names a different physical port. A device that
+// offers two ports (one that carries the surface, one that does not) would
+// silently come back on the wrong one. Matching ignores that trailing number,
+// which is the only part that moves; the rest of the name is what identifies
+// the port.
+function portBaseName(name: string): string {
+  return name.replace(/\s+\d+$/, '').trim();
+}
+
+function findPort<T extends { name: string }>(ports: T[], wanted: string): T | undefined {
+  const exact = ports.find((p) => p.name === wanted);
+  if (exact) return exact;
+  const base = portBaseName(wanted);
+  if (!base) return undefined;
+  return ports.find((p) => portBaseName(p.name) === base);
+}
+
 export class MidiService {
   private output = new midi.Output();          // primary output ('primary')
   private input  = new midi.Input();
@@ -119,7 +139,7 @@ export class MidiService {
       if (virtual) {
         this.output.openVirtualPort(portName);
       } else {
-        const match = this.listPorts().find((p) => p.name === portName);
+        const match = findPort(this.listPorts(), portName);
         if (!match) return { ok: false };
         this.output.openPort(match.index);
       }
@@ -128,7 +148,7 @@ export class MidiService {
       for (const o of extraOutputs) {
         const trimmed = (o.portName ?? '').trim();
         if (!trimmed) continue;
-        const m = ports.find((p) => p.name === trimmed);
+        const m = findPort(ports, trimmed);
         if (!m) continue;
         const out = new midi.Output();
         try { out.openPort(m.index); this.extraOutputs.set(o.id, out); }
@@ -211,7 +231,7 @@ export class MidiService {
     try {
       this.closeExtraInputs();
       this.input.closePort();
-      const match = this.listInputPorts().find((p) => p.name === portName);
+      const match = findPort(this.listInputPorts(), portName);
       if (!match) return { ok: false };
       this.input.openPort(match.index);
       // Additional input ports: forward only channel-voice messages (MTC/SysEx
@@ -220,7 +240,7 @@ export class MidiService {
       for (const name of extraPorts) {
         const trimmed = (name ?? '').trim();
         if (!trimmed || trimmed === portName) continue;
-        const m = ports.find((p) => p.name === trimmed);
+        const m = findPort(ports, trimmed);
         if (!m) continue;
         const inp = new midi.Input();
         try {

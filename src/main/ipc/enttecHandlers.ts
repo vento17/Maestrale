@@ -30,4 +30,8 @@ export function registerEnttecHandlers(): void {
   ipcMain.on('tr:enttec:sendChannel', (_e, p: { channel: number; value: number }) => {
     svc.setChannel(p.channel, p.value);
   });
+
+  ipcMain.on('tr:enttec:sendChannels', (_e, p: { channels: { channel: number; value: number }[] }) => {
+    svc.setChannels(p.channels);
+  });
 }

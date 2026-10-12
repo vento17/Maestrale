@@ -1,3 +1,4 @@
+import { CELLS_PER_PAGE, pageCount } from './IControls/iControlsMidi';
 import type { Widget, ValueDisplayMode, TimelineWidget, TrigTrack, CueTrack } from '../../shared/types/project';
 import type { Mapping } from '../../shared/types/mapping';
 
@@ -68,7 +69,8 @@ export function cellCount(widget: Widget): number {
     case 'palette':        return 3 * widget.colors.length;   // R G B per colour
     case 'merge':          return Math.max(1, Math.min(16, widget.every || 1));
     case 'etc':            return 5;  // 2 masters + Grandmaster + GO + STOP
-    case 'iControls':      return 18; // 0–8 faders (8 + master), 9–17 knobs
+    // 50 cells a page: 0–8 faders (8 + master), 9–17 knobs, 18–49 buttons.
+    case 'iControls':      return CELLS_PER_PAGE * pageCount(widget);
   }
 }
 

@@ -1,16 +1,44 @@
-0.4.1 — iControls widget, Enttec Open DMX fixed, DMX channels in the cell editor
+0.4.1 - iControls with layers and buttons, Open DMX fixed, undo that costs nothing
 
-- New iControls widget: an iCON iControls / iControls Pro in Mackie mode comes
-  in as nine faders (eight plus master, touch-sensitive, 14-bit) and nine knobs
-  (the eight V-Pots plus the jog wheel), each one a cell you can patch anywhere
-- Enttec Open DMX: the FTDI driver now opens the dongle properly, so the
-  universe actually goes out
-- Cell editor: a slider, button or knob bank set to Enttec Open DMX now shows
-  its DMX channel, like Art-Net and sACN already did — the column was missing
-  altogether, so there was no way to set a channel by hand
-- Cells added to a bank now follow the bank's protocol. Growing a DMX, OSC or
-  sACN bank used to hand the new cells MIDI defaults
-- Name: Maestrale throughout — window, README, repository and Release
+- New iControls widget: an iCON iControls / iControls Pro comes in as four
+  pages, one per layer of the surface, each with 9 faders, 9 knobs and 32
+  buttons - 200 cells to patch anywhere. The Layer buttons on the unit change
+  the page, and so do the arrows in the widget
+- Every page carries its own MIDI map, because the layers of a real unit use
+  different and unpredictable CC numbers. "Learn" fills a row by moving the
+  controls instead of reading numbers out of iMap
+- The surface works whatever page of the project is on screen. Its listener
+  used to live inside the widget, which React unmounts as soon as you look at
+  another page, so a surface built on page 1 went deaf on page 2
+- MIDI ports are matched without the index RtMidi puts on the end of their
+  names. That index moves when any other MIDI device is plugged or unplugged,
+  so a saved choice silently became a different physical port - on a unit with
+  two ports, the one that does nothing
+- Enttec Open DMX: the FTDI driver now opens the dongle properly
+- Open DMX timing: a frame is 513 bytes at 250 kbaud, 22.6 ms on the wire, and
+  the loop was sending one every 22 ms - each cycle cut the previous frame in
+  half and fixtures flickered. Now 30 ms, with the break and mark-after-break
+  held for a measured 120 and 20 microseconds instead of however long a USB
+  transfer happened to take
+- Moving a fader no longer sends one IPC message per pointer event - hundreds a
+  second on a high-polling mouse, which starved the main process where the DMX
+  frame timer lives. Changes are folded by channel and sent at most every 15 ms
+- Undo keeps a reference to the previous project instead of a deep copy of the
+  whole thing. Fifty deep copies of a project carrying a sound file ran the
+  renderer out of heap, and pulling a cable or a copy-paste was enough to get
+  there. Ten steps are kept, and they cost nothing
+- Each cable is saved the moment it is dropped: one link, one undo step. They
+  used to be queued and written when Shift was tapped again, so a patch made
+  and never confirmed was quietly lost
+- Cell editor: a bank set to Enttec Open DMX shows its DMX channel, like
+  Art-Net and sACN already did. The column was missing altogether
+- Cells added to a bank follow the bank's protocol. Growing a DMX, OSC or sACN
+  bank used to hand the new cells MIDI defaults
+- Timeline: the Edit preview no longer crashes on a timeline holding a cue,
+  wait or sound track - it assumed every track had keyframes
+
+Known: the Sound Player still stores audio inside the project file as base64,
+so a project with a long sound in it becomes very large and slow to save.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ETGEwquYRdYkhw21SvwUKf

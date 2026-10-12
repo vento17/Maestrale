@@ -1,6 +1,16 @@
 import { pal } from '../../palette';
 import React from 'react';
-import type { TimelineWidget, ValueTrack, ColorTrack } from '../../../shared/types/project';
+import type { TimelineWidget, TimelineTrack, ValueTrack, ColorTrack, TrigTrack } from '../../../shared/types/project';
+
+// Only these three kinds carry keyframes. 'sound', 'cue' and 'wait' do not, and
+// a cast that claimed otherwise is what took this preview down: a timeline with
+// a cue or wait track handed the dot loop an undefined array.
+function keyframesOf(t: TimelineTrack): { id: string; time: number; value?: number }[] {
+  if (t.kind === 'value' || t.kind === 'color' || t.kind === 'trig') {
+    return ((t as ValueTrack | ColorTrack | TrigTrack).keyframes ?? []) as { id: string; time: number; value?: number }[];
+  }
+  return [];
+}
 
 const TRACK_H = 22;
 
@@ -17,7 +27,8 @@ function trackIcon(kind: string): string {
 }
 
 export default function TimelineDesign({ widget }: { widget: TimelineWidget }): React.JSX.Element {
-  const hasTrack = widget.tracks.length > 0;
+  const tracks = widget.tracks ?? [];
+  const hasTrack = tracks.length > 0;
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#080808' }}>
@@ -33,7 +44,7 @@ export default function TimelineDesign({ widget }: { widget: TimelineWidget }): 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left track labels */}
         <div style={{ width: 80, flexShrink: 0, borderRight: '1px solid #141414', overflowY: 'hidden' }}>
-          {widget.tracks.slice(0, 6).map((t) => (
+          {tracks.slice(0, 6).map((t) => (
             <div key={t.id} style={{ height: TRACK_H, display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', borderBottom: '1px solid #101010' }}>
               <span style={{ fontSize: 8, color: trackColor(t.kind) }}>{trackIcon(t.kind)}</span>
               <span style={{ fontSize: 9, color: '#444', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{t.label}</span>
@@ -48,17 +59,17 @@ export default function TimelineDesign({ widget }: { widget: TimelineWidget }): 
 
         {/* Timeline area */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          {widget.tracks.slice(0, 6).map((t) => {
-            const kfs = t.kind !== 'sound' ? (t as ValueTrack | ColorTrack).keyframes : [];
+          {tracks.slice(0, 6).map((t) => {
+            const kfs = keyframesOf(t);
             const bg = t.kind === 'color'
-              ? `linear-gradient(to right, ${(t as ColorTrack).keyframes.slice(0, 4).map((k) => `${k.color} ${(k.time * 100).toFixed(0)}%`).join(', ') || '#111'})`
+              ? `linear-gradient(to right, ${((t as ColorTrack).keyframes ?? []).slice(0, 4).map((k) => `${k.color} ${(k.time * 100).toFixed(0)}%`).join(', ') || '#111'})`
               : 'transparent';
             return (
               <div key={t.id} style={{ height: TRACK_H, borderBottom: '1px solid #101010', position: 'relative', background: bg, overflow: 'hidden' }}>
                 {t.kind === 'value' && kfs.length >= 2 && (
                   <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} preserveAspectRatio="none" viewBox="0 0 100 100">
                     <polyline
-                      points={(kfs as ValueTrack['keyframes']).map((k) => `${k.time * 100},${(1 - k.value) * 100}`).join(' ')}
+                      points={kfs.map((k) => `${k.time * 100},${(1 - (k.value ?? 0)) * 100}`).join(' ')}
                       fill="none" stroke={(t as ValueTrack).color} strokeWidth={2} vectorEffect="non-scaling-stroke" />
                   </svg>
                 )}

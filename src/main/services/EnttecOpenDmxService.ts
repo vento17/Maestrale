@@ -1,4 +1,5 @@
 import koffi from 'koffi';
+import { performance } from 'perf_hooks';
 import fs from 'fs';
 import path from 'path';
 
@@ -35,9 +36,19 @@ const ftStatus = (st: number): string => `${FT_STATUS_NAMES[st] ?? 'FT_ERROR'} (
 
 // Sub-millisecond wait. setTimeout cannot do microseconds and the DMX break is
 // measured in them, so this spins on the monotonic clock.
+//
+// It MUST be performance.now(), which returns a plain number.
+// process.hrtime.bigint() allocates a BigInt on the heap on every single call,
+// and a spin of this length calls it well over a thousand times — around sixty
+// thousand BigInts a second at this frame rate, produced inside a loop that
+// blocks the event loop and so starves the collector that would clean them up.
+// That was enough to run the main process out of heap and take the window down
+// with it, a few minutes after the Open DMX dongle was connected.
 function spinMicros(us: number): void {
-  const end = process.hrtime.bigint() + BigInt(Math.round(us * 1000));
-  while (process.hrtime.bigint() < end) { /* a hundred microseconds, once a frame */ }
+  const end = performance.now() + us / 1000;
+  // A clock that never advances would hang the process, so the spin is bounded.
+  let guard = 0;
+  while (performance.now() < end && ++guard < 2_000_000) { /* ~100 us, twice a frame */ }
 }
 
 // FT_HANDLE is an opaque pointer. It MUST be a named opaque type: an out-param
@@ -151,6 +162,7 @@ export class EnttecOpenDmxService {
   private channels = Buffer.alloc(512, 0); // index 0 = DMX ch 1, index 511 = DMX ch 512
   private frame = Buffer.alloc(513, 0);    // start code 0x00 + 512 channels
   private timer: NodeJS.Timeout | null = null;
+  private nextFrameAt = 0;
   private connected = false;
   private writeErrorLogged = false;
 
@@ -206,7 +218,8 @@ export class EnttecOpenDmxService {
 
     this.handle = h;
     this.connected = true;
-    this.timer = setInterval(() => this.sendFrame(), FLUSH_INTERVAL_MS);
+    this.nextFrameAt = Date.now();
+    this.loop();
   }
 
   // The 512 channels as they are being sent (index 0 = ch 1) — for the recorder.
@@ -217,18 +230,35 @@ export class EnttecOpenDmxService {
     this.channels[channel - 1] = Math.max(0, Math.min(255, Math.round(value)));
   }
 
+  setChannels(list: ReadonlyArray<{ channel: number; value: number }>): void {
+    for (const c of list) this.setChannel(c.channel, c.value);
+  }
+
   isConnected(): boolean {
     return this.connected;
   }
 
   close(): void {
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     if (this.handle && ftd) {
       try { ftd.Close(this.handle); } catch { /* ignore */ }
     }
     this.handle = null;
     this.connected = false;
     this.channels.fill(0);
+  }
+
+  // Frames are kept on a fixed clock rather than a setInterval. When the main
+  // process stalls — a big render, a burst of IPC — setInterval fires its missed
+  // callbacks back to back, and those bunched frames land on top of each other
+  // on the wire. Here a late frame just moves the grid forward instead.
+  private loop(): void {
+    this.sendFrame();
+    if (!this.connected) return;
+    const now = Date.now();
+    this.nextFrameAt += FLUSH_INTERVAL_MS;
+    if (this.nextFrameAt <= now) this.nextFrameAt = now + FLUSH_INTERVAL_MS;
+    this.timer = setTimeout(() => this.loop(), this.nextFrameAt - now);
   }
 
   private sendFrame(): void {

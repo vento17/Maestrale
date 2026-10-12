@@ -8,6 +8,7 @@ import ShellEngine from '../../widgets/Shell/ShellEngine';
 import { ClockEngine } from '../../widgets/Clock/ClockLive';
 import { startMergeEngine } from '../../widgets/Merge/mergeEngine';
 import MasterEngine from './MasterEngine';
+import IControlsEngine from '../../widgets/IControls/IControlsEngine';
 import PatchLayer from './PatchLayer';
 
 const SIDEBAR_WIDTH = 248;
@@ -87,6 +88,7 @@ export default function LiveMode(): React.JSX.Element {
       <ShellEngine />
       <ClockEngine />
       <MasterEngine />
+      <IControlsEngine />
       {/* Hold Shift: drag cables from outputs to controls to link them. */}
       <PatchLayer />
 

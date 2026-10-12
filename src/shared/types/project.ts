@@ -838,10 +838,36 @@ export interface AudioLevelWidget extends WidgetBase {
 // Mirror of an iCON iControls / iControls Pro in Mackie mode. Cells 0–8 are the
 // 8 faders + master (Pitch Bend on MIDI ch 1–9, 14-bit), cells 9–17 the 9 knobs
 // (relative CC). Every cell is an output to patch anywhere.
+// One button slot on a page. note 0 = the slot is unused.
+export interface IControlsButton {
+  label: string;
+  note: number;         // 0–127
+}
+
+// One LAYER of the surface. Each layer sends its own thing — layer 1 is usually
+// Mackie (Pitch Bend faders, relative V-Pots), the others plain CC on whatever
+// numbers the unit's iMap file says — so the map belongs to the page, not to
+// the widget.
+export interface IControlsPage {
+  name?: string;
+  channel?: number;              // 1–16; 0 or missing = any channel
+  faderMode: 'pitchBend' | 'cc';
+  faderCcs?: number[];           // 9, when faderMode is 'cc'
+  knobMode: 'relative' | 'absolute';
+  knobCcs?: number[];            // 9
+  buttons?: IControlsButton[];   // 32 slots
+}
+
 export interface IControlsWidget extends WidgetBase {
   kind: 'iControls';
   knobStep: number;     // value change per knob tick, 0–1 (1/127 = one MIDI step)
-  knobCcs?: number[];   // CC of knobs 1–9; default 16–23 (V-Pots) + 60 (jog)
+  knobCcs?: number[];   // legacy: knobs of the single page, before pages existed
+  pages?: IControlsPage[];
+  // The surface's Layer < and > buttons. On this unit they are set to notes
+  // 48 and 49, which are also Mackie's Channel Left / Right.
+  pagePrevNote?: number;
+  pageNextNote?: number;
+  pageNoteChannel?: number;      // 1–16; 0 = any
 }
 
 // ─── Encoder ──────────────────────────────────────────────────────────────────

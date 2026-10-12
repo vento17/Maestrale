@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { original } from 'immer';
 import { nanoid } from 'nanoid';
 import { eachRouter, mainRouterRows } from '../widgets/base/routers';
 import type { StoreState } from './index';
@@ -277,6 +278,26 @@ function remapWidgetRefs(widget: Widget, idMap: Record<string, string>): void {
   }
 }
 
+const HISTORY_CAP = 10;
+
+// One step of undo.
+//
+// This used to be JSON.parse(JSON.stringify(project)) — a full deep copy of the
+// whole project, up to fifty of them alive at once. On a project carrying
+// anything heavy (a sound file, a DMX take) that is gigabytes: a 143 MB project
+// here reached 7 GB and the renderer was killed by the collector, and all it
+// took was pulling cables or a copy-paste, because both record a step.
+//
+// The copy was never needed. The store runs through immer, so the project as it
+// stood before this change is already its own frozen object — original() hands
+// it back. A step therefore costs one reference, and everything the step did
+// not touch stays shared with the new state instead of being duplicated.
+function pushHistory(s: { project: Project; projectHistory: Project[] }): void {
+  const prev = (original(s.project) ?? s.project) as Project;
+  s.projectHistory.push(prev);
+  if (s.projectHistory.length > HISTORY_CAP) s.projectHistory.shift();
+}
+
 export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', never]], [], LayoutSlice> = (set) => ({
   project: makeDefaultProject(),
   projectHistory: [],
@@ -356,9 +377,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
     if (s.project.pages.length === 1) return;
     // Any page can be deleted now, not just the last one, so this throws away
     // real work — make it undoable like the other destructive edits.
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
     s.project.pages = s.project.pages.filter((p) => p.id !== pageId);
     if (s.activePageId === pageId) s.activePageId = s.project.pages[0].id;
     touchUpdatedAt(s.project);
@@ -385,9 +404,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   addWidget: (pageId, kind) => {
     const id = nanoid();
     set((s) => {
-      const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-      s.projectHistory.push(snapshot);
-      if (s.projectHistory.length > 50) s.projectHistory.shift();
+      pushHistory(s);
       const page = getPage(s.project, pageId);
       if (!page) return;
       const baseCC = nextFreeCc(page.widgets);
@@ -403,9 +420,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   },
 
   removeWidget: (pageId, widgetId) => set((s) => {
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
     const page = getPage(s.project, pageId);
     if (!page) return;
     page.widgets = page.widgets.filter((w) => w.id !== widgetId);
@@ -558,18 +573,14 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   }),
 
   linkSlaveCell: (params) => set((s) => {
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
     applySlaveLink(s.project, params);
     touchUpdatedAt(s.project);
   }),
 
   linkSlaveCells: (routerId, links) => set((s) => {
     if (links.length === 0) return;
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
     for (const l of links) applySlaveLink(s.project, { ...l, routerId });
     touchUpdatedAt(s.project);
   }),
@@ -588,9 +599,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   }),
 
   unlinkSlaveCell: (slaveWidgetId, slaveCellIndex) => set((s) => {
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
 
     mainRouterRows(s.project);
     for (const r of eachRouter(s.project)) {
@@ -606,9 +615,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
 
   removeRouterOutputs: (refs) => set((s) => {
     if (refs.length === 0) return;
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
 
     mainRouterRows(s.project);
     for (const r of eachRouter(s.project)) {
@@ -715,9 +722,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   },
 
   captureHistory: () => set((s) => {
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
   }),
 
   undo: () => set((s) => {
@@ -736,9 +741,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
   cutWidgets: (pageId, widgetIds) => set((s) => {
     const page = getPage(s.project, pageId);
     if (!page || widgetIds.length === 0) return;
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
     // Clone the cut widgets (preserving page order + their ORIGINAL ids) onto the
     // clipboard, then remove them. On paste the same ids are restored, so it's a
     // true move — router links referencing these widgets by id stay intact,
@@ -757,9 +760,7 @@ export const createLayoutSlice: StateCreator<StoreState, [['zustand/immer', neve
     if (s.clipboard.length === 0) return;
     const page = getPage(s.project, pageId);
     if (!page) return;
-    const snapshot = JSON.parse(JSON.stringify(s.project)) as Project;
-    s.projectHistory.push(snapshot);
-    if (s.projectHistory.length > 50) s.projectHistory.shift();
+    pushHistory(s);
 
     const isCut = s.clipboardMode === 'cut';
     let z = maxZIndex(page);

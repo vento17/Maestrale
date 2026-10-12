@@ -1,3 +1,4 @@
+import { defaultPages, PAGE_PREV_NOTE, PAGE_NEXT_NOTE } from './IControls/iControlsMidi';
 import { pal } from '../palette';
 import type {
   Widget, WidgetKind,
@@ -507,6 +508,10 @@ export function makeDefaultWidget(id: string, kind: WidgetKind, zIndex: number, 
         mapping: null,
         feedbackRules: [],
         knobStep: 1 / 127,
+        pages: defaultPages(),
+        pagePrevNote: PAGE_PREV_NOTE,
+        pageNextNote: PAGE_NEXT_NOTE,
+        pageNoteChannel: 1,
       } satisfies IControlsWidget;
     }
     case 'audioLevel': {

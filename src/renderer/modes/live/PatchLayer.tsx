@@ -427,16 +427,10 @@ export default function PatchLayer(): React.JSX.Element | null {
       force();
     };
 
-    // End of a session: everything queued lands in the main router at once,
-    // as a single undo step.
+    // Cables are written as they are dropped (see addLink), so there is nothing
+    // left to commit here — ending a session just drops the cable in hand.
     const finish = (): void => {
       s.cable = null;
-      if (s.pending.length > 0) {
-        useStore.getState().linkSlaveCells(MAIN_ROUTER_ID, s.pending.map((p) => ({
-          slaveWidgetId: p.target.widgetId, slaveCellIndex: p.target.cellIndex,
-          sourceWidgetId: p.source.widgetId, sourceCellIndex: p.source.cellIndex,
-        })));
-      }
       s.pending = [];
       force();
     };
@@ -444,15 +438,22 @@ export default function PatchLayer(): React.JSX.Element | null {
     const addLink = (source: CellRef, target0: CellRef): void => {
       let target = target0;
       if (target.cellIndex === MERGE_NEXT) {
-        // The Merge box: this cable becomes its next free input.
+        // The Merge box: this cable becomes its next free input. Every earlier
+        // cable is already in the project, so the store alone knows which
+        // inputs are taken.
         const used = new Set(connectedInputs(useStore.getState().project, target.widgetId));
-        s.pending.forEach((p) => { if (p.target.widgetId === target.widgetId && p.target.cellIndex < 0) used.add(-p.target.cellIndex); });
         target = { widgetId: target.widgetId, cellIndex: -nextMergeInput([...used]) };
       }
       if (keyOf(source) === keyOf(target)) return;
-      // One source per slave cell — re-dropping on a cell re-sources it.
-      s.pending = s.pending.filter((p) => keyOf(p.target) !== keyOf(target));
-      s.pending.push({ source: { ...source }, target: { ...target } });
+      // Each cable is written the moment it is dropped — one link, one undo
+      // step, one save. They used to be queued and committed together when
+      // Shift was tapped again, which meant a patch made and never confirmed
+      // was quietly lost. linkSlaveCells already re-sources a slave cell that
+      // had a source, so dropping on a patched input still replaces it.
+      useStore.getState().linkSlaveCells(MAIN_ROUTER_ID, [{
+        slaveWidgetId: target.widgetId, slaveCellIndex: target.cellIndex,
+        sourceWidgetId: source.widgetId, sourceCellIndex: source.cellIndex,
+      }]);
     };
 
     const eat = (e: Event): void => { e.preventDefault(); e.stopPropagation(); };
@@ -496,8 +497,9 @@ export default function PatchLayer(): React.JSX.Element | null {
     };
 
     // Shift: a TAP switches patching on (cables stay shown, one drag = one
-    // cable) and another tap switches it off, saving what was made. HOLDING it
-    // keeps the cable on the pointer: many drops from the same output.
+    // cable) and another tap switches it off. HOLDING it keeps the cable on the
+    // pointer: many drops from the same output. Each drop is saved on its own,
+    // so nothing depends on how the session ends.
     const releaseShift = (): void => {
       if (!s.held) return;
       s.held = false;

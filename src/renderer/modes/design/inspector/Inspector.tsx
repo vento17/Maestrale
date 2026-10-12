@@ -42,6 +42,8 @@ import { nextFreeCc } from '../../../widgets/defaults';
 import { artnetConfigOutputs, sacnConfigOutputs, oscConfigOutputs, midiConfigOutputs, listOutputs } from '../../../../shared/outputs';
 import type { OutputProtocol } from '../../../../shared/outputs';
 import logoUrl from '../../../assets/Logo.png';
+import { widgetPages as icWidgetPages, defaultPages as icDefaultPages, knobCcsOf as icKnobCcsOf, faderCcsOf as icFaderCcsOf, buttonsOf as icButtonsOf } from '../../../widgets/IControls/iControlsMidi';
+import { useIControlsBank, startLearn as icStartLearn, stopLearn as icStopLearn } from '../../../widgets/IControls/iControlsBank';
 import { GLOBAL_BAR_HEIGHT } from '../../GlobalBar';
 
 export default function Inspector(): React.JSX.Element {
@@ -5072,9 +5074,41 @@ function IControlsInspectorPanel({ widget, activePageId, updateWidget, updateWid
   updateWidget: StoreState['updateWidget'];
   updateWidgetRect: StoreState['updateWidgetRect'];
 }) {
+  type ICPage = import('../../../../shared/types/project').IControlsPage;
   function patch(p: Partial<import('../../../../shared/types/project').IControlsWidget>) { updateWidget(activePageId, widget.id, p as never); }
+
+  const pages = icWidgetPages(widget);
+  const { page: livePage, learn } = useIControlsBank(widget.id);
+  const [editing, setEditing] = React.useState(0);
+  const idx = Math.min(editing, pages.length - 1);
+  const cfg = pages[idx];
   const ticksPerTurn = Math.round(1 / (widget.knobStep > 0 ? widget.knobStep : 1 / 127));
-  const ccs = widget.knobCcs?.length === 9 ? widget.knobCcs : [16, 17, 18, 19, 20, 21, 22, 23, 60];
+
+  function patchPage(i: number, p: Partial<ICPage>): void {
+    patch({ pages: pages.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+  }
+  function ccRow(label: string, value: number[], onSet: (n: number[]) => void, what: 'faders' | 'knobs'): React.JSX.Element {
+    const busy = learn?.widgetId === widget.id && learn.page === idx && learn.what === what;
+    return (
+      <Field label={label}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <input key={value.join(' ')} style={{ ...styles.input, flex: 1 }} defaultValue={value.join(' ')}
+            onBlur={(e) => {
+              const n = e.target.value.split(/[\s,]+/).filter(Boolean).map(Number);
+              if (n.length === 9 && n.every((x) => Number.isInteger(x) && x >= 0 && x <= 127)) onSet(n);
+            }} />
+          <button style={icLearnBtn(busy)}
+            onClick={() => (busy ? icStopLearn() : icStartLearn(widget.id, idx, what, 0, 9))}>
+            {busy ? `${learn!.got.length}/9` : 'Learn'}
+          </button>
+        </div>
+      </Field>
+    );
+  }
+
+  const buttons = icButtonsOf(cfg);
+  const btnLearn = learn?.widgetId === widget.id && learn.page === idx && learn.what === 'buttons';
+
   return (
     <>
       <div style={styles.header}>iCON iControls</div>
@@ -5082,22 +5116,104 @@ function IControlsInspectorPanel({ widget, activePageId, updateWidget, updateWid
         <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
       </Section>
       <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
-      <Section label="Knobs">
-        <Field label="Ticks from 0 to full">
-          <NumInput value={ticksPerTurn} min={8} max={2000}
-            onChange={(v) => patch({ knobStep: 1 / Math.max(8, Math.min(2000, v)) })} />
+
+      <Section label="Pages (the surface's layers)">
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+          {pages.map((p, i) => (
+            <button key={i} onClick={() => setEditing(i)}
+              style={{
+                ...icTabBtn(i === idx),
+                borderBottom: i === livePage ? '2px solid var(--color-accent)' : icTabBtn(i === idx).borderBottom,
+              }}
+              title={i === livePage ? 'This is the page the surface is on now' : ''}>
+              {p.name || `Page ${i + 1}`}
+            </button>
+          ))}
+          <button style={icTabBtn(false)}
+            onClick={() => patch({ pages: [...pages, { ...icDefaultPages()[Math.min(pages.length, 3)], name: `Page ${pages.length + 1}` }] })}>＋</button>
+          {pages.length > 1 && (
+            <button style={icTabBtn(false)} title="Remove the page being edited"
+              onClick={() => { patch({ pages: pages.filter((_, j) => j !== idx) }); setEditing(0); }}>－</button>
+          )}
+        </div>
+        <Field label="Name"><input style={styles.input} value={cfg.name ?? ''} onChange={(e) => patchPage(idx, { name: e.target.value })} /></Field>
+        <Field label="MIDI channel (0 = any)">
+          <NumInput value={cfg.channel ?? 0} min={0} max={16} onChange={(v) => patchPage(idx, { channel: v })} />
         </Field>
-        <Field label="Knob CCs (1–9)">
-          <input key={ccs.join(' ')} style={styles.input} defaultValue={ccs.join(' ')}
+      </Section>
+
+      <Section label="Faders on this page">
+        <Field label="Source">
+          <select style={styles.input} value={cfg.faderMode}
+            onChange={(e) => patchPage(idx, { faderMode: e.target.value as 'pitchBend' | 'cc' })}>
+            <option value="pitchBend">Pitch Bend (Mackie)</option>
+            <option value="cc">CC, absolute</option>
+          </select>
+        </Field>
+        {cfg.faderMode === 'cc' && ccRow('Fader CCs (1–8 + master)', icFaderCcsOf(cfg), (n) => patchPage(idx, { faderCcs: n }), 'faders')}
+      </Section>
+
+      <Section label="Knobs on this page">
+        <Field label="Source">
+          <select style={styles.input} value={cfg.knobMode}
+            onChange={(e) => patchPage(idx, { knobMode: e.target.value as 'relative' | 'absolute' })}>
+            <option value="relative">Relative (Mackie V-Pots)</option>
+            <option value="absolute">CC, absolute</option>
+          </select>
+        </Field>
+        {ccRow('Knob CCs (1–9)', icKnobCcsOf(cfg), (n) => patchPage(idx, { knobCcs: n }), 'knobs')}
+        {cfg.knobMode === 'relative' && (
+          <Field label="Ticks from 0 to full">
+            <NumInput value={ticksPerTurn} min={8} max={2000}
+              onChange={(v) => patch({ knobStep: 1 / Math.max(8, Math.min(2000, v)) })} />
+          </Field>
+        )}
+      </Section>
+
+      <Section label="Buttons on this page">
+        <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
+          32 slots, each one a cell you can patch. Note 0 leaves a slot unused.
+          Learn fills eight slots from the first one shown — press eight buttons on the surface in order.
+        </div>
+        {[0, 8, 16, 24].map((from) => (
+          <div key={from} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+            <div style={{ width: 54, fontSize: 11, color: 'var(--color-text-dim)' }}>{from + 1}–{from + 8}</div>
+            <input key={buttons.slice(from, from + 8).map((b) => b.note).join(' ')}
+              style={{ ...styles.input, flex: 1 }}
+              defaultValue={buttons.slice(from, from + 8).map((b) => b.note).join(' ')}
+              onBlur={(e) => {
+                const n = e.target.value.split(/[\s,]+/).filter(Boolean).map(Number);
+                if (n.length !== 8 || !n.every((x) => Number.isInteger(x) && x >= 0 && x <= 127)) return;
+                const bs = buttons.slice();
+                n.forEach((note, j) => { bs[from + j] = { ...bs[from + j], note }; });
+                patchPage(idx, { buttons: bs });
+              }} />
+            <button style={icLearnBtn(!!btnLearn && learn!.from === from)}
+              onClick={() => ((btnLearn && learn!.from === from) ? icStopLearn() : icStartLearn(widget.id, idx, 'buttons', from, 8))}>
+              {btnLearn && learn!.from === from ? `${learn!.got.length}/8` : 'Learn'}
+            </button>
+          </div>
+        ))}
+        <Field label="Slot names (32, comma separated)">
+          <input key={buttons.map((b) => b.label).join(',')} style={styles.input}
+            defaultValue={buttons.map((b) => b.label).join(',')}
             onBlur={(e) => {
-              const n = e.target.value.split(/[\s,]+/).filter(Boolean).map(Number);
-              if (n.length === 9 && n.every((x) => Number.isInteger(x) && x >= 0 && x <= 127)) patch({ knobCcs: n });
+              const parts = e.target.value.split(',').map((x) => x.trim());
+              if (parts.length !== buttons.length) return;
+              patchPage(idx, { buttons: buttons.map((b, j) => ({ ...b, label: parts[j] })) });
             }} />
         </Field>
+      </Section>
+
+      <Section label="Changing page from the surface">
+        <Field label="Layer &lt; note"><NumInput value={widget.pagePrevNote ?? 48} min={0} max={127} onChange={(v) => patch({ pagePrevNote: v })} /></Field>
+        <Field label="Layer &gt; note"><NumInput value={widget.pageNextNote ?? 49} min={0} max={127} onChange={(v) => patch({ pageNextNote: v })} /></Field>
+        <Field label="On MIDI channel (0 = any)"><NumInput value={widget.pageNoteChannel ?? 1} min={0} max={16} onChange={(v) => patch({ pageNoteChannel: v })} /></Field>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
-          Set the surface to Mackie mode and pick it as MIDI input in Settings. Faders 1–8 and the master read Pitch Bend
-          on MIDI channels 1–9 (14-bit); touching a cap only lights the fader. Knobs are relative: 1–8 are the V-Pots
-          (CC 16–23), knob 9 the jog (CC 60). Every fader and knob is an output — Shift-drag from its dot, or right-click it.
+          Pick the surface as MIDI input in Settings. On the unit, set the two Layer buttons to send these notes
+          (iMap writes them as octave(name) with C3 = 48, so 48 is &quot;3(C)&quot; and 49 is &quot;3(C#)&quot;) and the widget follows
+          the layer you switch to. The arrows in the widget&apos;s corner change the page by hand. Every fader, knob and
+          button is an output — Shift-drag from its dot, or right-click it.
         </div>
       </Section>
     </>
@@ -5975,3 +6091,19 @@ function EosUserRow({ widget, activePageId }: { widget: import('../../../../shar
     </div>
   );
 }
+
+
+const icTabBtn = (on: boolean): React.CSSProperties => ({
+  padding: '3px 8px', fontSize: 11, cursor: 'pointer', borderRadius: 3,
+  background: on ? 'var(--color-surface-2)' : 'transparent',
+  border: '1px solid var(--color-border)',
+  borderBottom: '1px solid var(--color-border)',
+  color: on ? 'var(--color-text)' : 'var(--color-text-dim)',
+});
+
+const icLearnBtn = (busy: boolean): React.CSSProperties => ({
+  padding: '2px 8px', fontSize: 11, cursor: 'pointer', borderRadius: 3, flexShrink: 0,
+  background: busy ? 'var(--color-accent)' : 'var(--color-surface-2)',
+  border: '1px solid var(--color-border)',
+  color: busy ? '#000' : 'var(--color-text)',
+});

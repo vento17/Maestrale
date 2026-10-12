@@ -67,10 +67,37 @@ export function dispatchValue(mapping: Mapping, value: number): void {
     }
     case 'enttec': {
       const scaled = Math.round(v * (mapping.maxValue - mapping.minValue) + mapping.minValue);
-      bridge.send('tr:enttec:sendChannel', { channel: mapping.channel, value: scaled });
+      queueEnttec(mapping.channel, scaled);
       break;
     }
   }
+}
+
+// ─── Open DMX: fold a drag into one message ────────────────────────────────
+// A fader drag fires one pointer event per mouse report — a 1000 Hz mouse gives
+// a thousand a second — and sending an IPC message for each one swamped the main
+// process, which is exactly where the DMX frame timer lives. Frames then went
+// out late and uneven and fixtures flickered while, and only while, a fader
+// moved. DMX only cares about the newest value of each channel, so a burst is
+// folded by channel and sent at most every 15 ms — still twice the frame rate.
+// The first change of a burst goes out at once, so a tap still feels instant.
+
+const ENTTEC_COALESCE_MS = 15;
+const pendingEnttec = new Map<number, number>();
+let enttecTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushEnttec(): void {
+  if (pendingEnttec.size === 0) return;
+  const channels = Array.from(pendingEnttec, ([channel, value]) => ({ channel, value }));
+  pendingEnttec.clear();
+  bridge.send('tr:enttec:sendChannels', { channels });
+}
+
+function queueEnttec(channel: number, value: number): void {
+  pendingEnttec.set(channel, value);
+  if (enttecTimer !== null) return;
+  flushEnttec();
+  enttecTimer = setTimeout(() => { enttecTimer = null; flushEnttec(); }, ENTTEC_COALESCE_MS);
 }
 
 // Buttons bypass normalization — onValue/offValue are already in protocol range.
