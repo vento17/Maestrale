@@ -2,7 +2,22 @@ import koffi from 'koffi';
 import fs from 'fs';
 import path from 'path';
 
-const FLUSH_INTERVAL_MS = 22; // ~44 Hz
+// A full DMX frame is 513 bytes at 250 kbaud, 8 data bits + 1 start + 2 stop =
+// 11 bits a byte: 513 * 11 / 250000 = 22.6 ms ON THE WIRE, before the break and
+// before any USB latency. The old 22 ms interval was therefore SHORTER than the
+// frame it was sending, so every cycle asserted the break while the previous
+// frame was still going out and the fixture got a truncated packet — which is
+// what made a head flicker. 30 ms (~33 Hz) leaves ~7 ms of headroom for USB
+// jitter and still refreshes far faster than any fixture needs.
+const FLUSH_INTERVAL_MS = 30;  // ~33 Hz
+
+// DMX512 asks for a break of at least 92 us and a mark-after-break of at least
+// 12 us. FT_SetBreakOn/Off back to back leaves both at the mercy of however
+// long the USB control transfer happens to take, so the break is held open for
+// a measured stretch instead. At one frame per 30 ms this busy-waits for 0.5%
+// of a core.
+const BREAK_US = 120;
+const MAB_US = 20;
 const FT_OK = 0;
 const FT_BITS_8 = 8;
 const FT_STOP_BITS_2 = 2;
@@ -17,6 +32,13 @@ const FT_STATUS_NAMES: Record<number, string> = {
   7: 'FT_INVALID_BAUD_RATE', 18: 'FT_OTHER_ERROR',
 };
 const ftStatus = (st: number): string => `${FT_STATUS_NAMES[st] ?? 'FT_ERROR'} (${st})`;
+
+// Sub-millisecond wait. setTimeout cannot do microseconds and the DMX break is
+// measured in them, so this spins on the monotonic clock.
+function spinMicros(us: number): void {
+  const end = process.hrtime.bigint() + BigInt(Math.round(us * 1000));
+  while (process.hrtime.bigint() < end) { /* a hundred microseconds, once a frame */ }
+}
 
 // FT_HANDLE is an opaque pointer. It MUST be a named opaque type: an out-param
 // declared as koffi.pointer('void') makes koffi throw "Cannot pass ambiguous
@@ -72,6 +94,7 @@ interface Ftd2xx {
   SetTimeouts: (h: unknown, rd: number, wr: number) => number;
   SetLatencyTimer: (h: unknown, ms: number) => number;
   Purge: (h: unknown, mask: number) => number;
+  GetStatus: (h: unknown, rx: number[], tx: number[], ev: number[]) => number;
   SetBreakOn: (h: unknown) => number;
   SetBreakOff: (h: unknown) => number;
   Write: (h: unknown, data: Buffer, len: number, written: number[]) => number;
@@ -108,6 +131,7 @@ function loadFtd2xx(): Ftd2xx {
     SetTimeouts: fn('FT_SetTimeouts', 'uint32', [FT_HANDLE, 'uint32', 'uint32']),
     SetLatencyTimer: fn('FT_SetLatencyTimer', 'uint32', [FT_HANDLE, 'uint8']),
     Purge: fn('FT_Purge', 'uint32', [FT_HANDLE, 'uint32']),
+    GetStatus: fn('FT_GetStatus', 'uint32', [FT_HANDLE, u32out(), u32out(), u32out()]),
     SetBreakOn: fn('FT_SetBreakOn', 'uint32', [FT_HANDLE]),
     SetBreakOff: fn('FT_SetBreakOff', 'uint32', [FT_HANDLE]),
     Write: fn('FT_Write', 'uint32', [FT_HANDLE, 'void *', 'uint32', u32out()]),
@@ -210,8 +234,16 @@ export class EnttecOpenDmxService {
   private sendFrame(): void {
     if (!this.handle || !ftd) return;
     try {
+      // Never start a frame on top of one that is still leaving: the break
+      // would cut it in half and the fixture would act on a corrupt packet.
+      // FT_GetStatus reports what the driver has not handed to the chip yet.
+      const rx = [0], tx = [0], ev = [0];
+      if (ftd.GetStatus(this.handle, rx, tx, ev) === FT_OK && tx[0] > 0) return;
+
       ftd.SetBreakOn(this.handle);
+      spinMicros(BREAK_US);
       ftd.SetBreakOff(this.handle);
+      spinMicros(MAB_US);
       this.channels.copy(this.frame, 1);
       const written = [0];
       const st = ftd.Write(this.handle, this.frame, 513, written);
