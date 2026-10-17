@@ -23,6 +23,11 @@ import { addLane, removeLane } from '../../../widgets/LfoWidget/LfoWidgetLive';
 import { addXYDot, XY_DOT_COLORS } from '../../../widgets/XYPad/XYPadLive';
 import ResizableColumn from '../../ResizableColumn';
 import { widgetEosUser, setWidgetEosUserPatch } from '../../../widgets/base/eosUser';
+import { EDGE_SIZE_DEFAULT, EDGE_COLOR_DEFAULT, TITLE_FONT_DEFAULT } from '../../../widgets/base/WidgetChrome';
+import { widgetEosFader, setWidgetEosFaderPatch, sendWidgetEosConfigs, widgetOscMappings, withEosFader } from '../../../widgets/base/eosFader';
+import { eosConfigOf, eosFaderPagePos } from '../../../../shared/types/mapping';
+import { widgetOscScale, setWidgetOscScalePatch, oscScaleOf, withOscScale, OSC_RANGES } from '../../../widgets/base/oscScale';
+import type { OscRange, OscArg } from '../../../widgets/base/oscScale';
 import { XY_PRESETS, applyXYPreset, defaultZ } from '../../../widgets/XYPad/xyPresets';
 import { ShellButtonEditor } from '../../../widgets/Shell/ShellLive';
 import { ColorEditor, setPaletteCount } from '../../../widgets/Palette/PaletteLive';
@@ -132,6 +137,9 @@ export default function Inspector(): React.JSX.Element {
                                                   : <WidgetPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
           : <NoSelectionPanel />
       }
+      {!isSettingsOpen && widget && activePageId && (
+        <TitleEdgeSection widget={widget} activePageId={activePageId} updateWidget={updateWidget} />
+      )}
     </div>
     </ResizableColumn>
   );
@@ -355,6 +363,8 @@ function WidgetPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
           <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5 }}>
             Changes protocol and resets cell mappings to defaults.
           </div>
+          {widget.outputProtocol === 'osc' && <OscScaleRow widget={widget} activePageId={activePageId} />}
+          {widget.outputProtocol === 'osc' && <EosFaderRow widget={widget} activePageId={activePageId} />}
           {widget.outputProtocol === 'osc' && <EosUserRow widget={widget} activePageId={activePageId} />}
           {(() => {
             const proto = widget.outputProtocol as string;
@@ -1516,10 +1526,14 @@ function MappingEditor({ mapping, onChange }: {
         </>
       )}
       {mapping?.type === 'osc' && (
-        <Field label="Address">
-          <input style={styles.input} value={(mapping as import('../../../../shared/types/mapping').OscMapping).address}
-            onChange={(e) => onChange({ ...mapping, address: e.target.value })} />
-        </Field>
+        <>
+          <Field label="Address">
+            <input style={styles.input} value={(mapping as import('../../../../shared/types/mapping').OscMapping).address}
+              onChange={(e) => onChange({ ...mapping, address: e.target.value })} />
+          </Field>
+          <OscScaleFields mapping={mapping as import('../../../../shared/types/mapping').OscMapping}
+            onChange={(p) => onChange(withOscScale(mapping, p) as Mapping)} />
+        </>
       )}
       {mapping?.type === 'enttec' && (
         <Row>
@@ -4251,6 +4265,48 @@ function TriggerField({ mapping, defaultAddress, onChange }: {
   );
 }
 
+// Title & edge — on every widget, whatever its kind: the thin edge, and the
+// title bar that grows out of its top with the widget's name.
+function TitleEdgeSection({ widget, activePageId, updateWidget }: {
+  widget: import('../../../../shared/types/project').Widget; activePageId: string; updateWidget: StoreState['updateWidget'];
+}): React.JSX.Element {
+  const s = widget.style;
+  const patchStyle = (p: Partial<WidgetStyle>): void => updateWidget(activePageId, widget.id, { style: { ...s, ...p } } as never);
+  const showTitle = s.showTitle ?? false;
+  return (
+    <Section label="Title & edge">
+      <Row>
+        <Field label="Show name">
+          <input type="checkbox" checked={showTitle}
+            onChange={(e) => patchStyle({ showTitle: e.target.checked })} style={{ marginTop: 6 }} />
+        </Field>
+        {showTitle && (
+          <Field label="Title font (px)">
+            <NumInput value={s.titleFontSize ?? TITLE_FONT_DEFAULT} onChange={(v) => patchStyle({ titleFontSize: Math.max(6, Math.round(v)) })} />
+          </Field>
+        )}
+      </Row>
+      {showTitle && (
+        <Field label="Name">
+          <input style={styles.input} value={widget.label}
+            onChange={(e) => updateWidget(activePageId, widget.id, { label: e.target.value } as never)} />
+        </Field>
+      )}
+      <Row>
+        <Field label="Edge (px)">
+          <NumInput value={s.edgeSize ?? EDGE_SIZE_DEFAULT} onChange={(v) => patchStyle({ edgeSize: Math.max(0, Math.round(v)) })} />
+        </Field>
+        <Field label="Edge color">
+          <ColorInput value={s.edgeColor ?? EDGE_COLOR_DEFAULT} onChange={(v) => patchStyle({ edgeColor: v })} />
+        </Field>
+      </Row>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5, lineHeight: 1.5 }}>
+        The edge runs around every widget; with the name on, the top edge widens into a title bar.
+      </div>
+    </Section>
+  );
+}
+
 function FrameSection({ style, patchStyle }: { style: WidgetStyle; patchStyle: (p: Partial<WidgetStyle>) => void }) {
   const frame      = style.frame      ?? 'none';
   const frameColor = style.frameColor ?? '#ffffff';
@@ -5590,7 +5646,6 @@ function MathInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRe
   function patch(partial: Partial<MathWidget>) { updateWidget(activePageId, widget.id, partial as never); }
 
   const usesB = ['add', 'subtract', 'multiply', 'min', 'max', 'avg'].includes(widget.operation);
-
   // Cells are listed by their real name (S1.1, cue names, track names…) — "Cell 0"
   // told you nothing about what you were picking.
   function cellOptions(widgetId: string): { index: number; label: string }[] {
@@ -5601,7 +5656,19 @@ function MathInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRe
 
   return (
     <>
-      <div style={styles.header}>Math / Merge</div>
+      <div style={styles.header}>Math</div>
+      <Section label="Inputs">
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
+          Like the Merge: hold Shift in Live and drop as many cables as you like on the dashed box —
+          each one becomes the next input. One cable alone passes straight through.
+        </div>
+        <Field label="Multiply ×">
+          <NumInput value={widget.gain ?? 1} onChange={(v) => patch({ gain: v })} step={1} />
+        </Field>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5 }}>
+          Multiply scales the result after the ranges and the clamp: ×100 sends 0–100.
+        </div>
+      </Section>
       <Section label="Position">
         <Row>
           <Field label="X"><NumInput value={widget.rect.x} onChange={(v) => updateWidgetRect(activePageId, widget.id, { x: v })} /></Field>
@@ -5612,7 +5679,7 @@ function MathInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRe
           <Field label="H"><NumInput value={widget.rect.height} onChange={(v) => updateWidgetRect(activePageId, widget.id, { height: v })} /></Field>
         </Row>
       </Section>
-      <Section label="Source A">
+      <Section label="Source A (in 1 when not cabled)">
         <Field label="Widget">
           <select style={styles.input} value={widget.sourceAWidgetId}
             onChange={(e) => patch({ sourceAWidgetId: e.target.value, sourceACellIndex: 0 })}>
@@ -5630,18 +5697,18 @@ function MathInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRe
       <Section label="Operation">
         <select style={styles.input} value={widget.operation}
           onChange={(e) => patch({ operation: e.target.value as MathOperation })}>
-          <option value="add">A + B</option>
-          <option value="subtract">A − B</option>
-          <option value="multiply">A × B</option>
-          <option value="min">min(A, B)</option>
-          <option value="max">max(A, B)</option>
-          <option value="avg">avg(A, B)</option>
-          <option value="invert">1 − A</option>
-          <option value="abs">abs(A)</option>
+          <option value="add">Add (sum of inputs)</option>
+          <option value="subtract">Subtract (in 1 − the rest)</option>
+          <option value="multiply">Multiply (product)</option>
+          <option value="min">Min</option>
+          <option value="max">Max</option>
+          <option value="avg">Average</option>
+          <option value="invert">1 − in 1</option>
+          <option value="abs">abs(in 1)</option>
         </select>
       </Section>
       {usesB && (
-        <Section label="Source B">
+        <Section label="Source B (in 2 when not cabled)">
           <Field label="Widget">
             <select style={styles.input} value={widget.sourceBWidgetId}
               onChange={(e) => patch({ sourceBWidgetId: e.target.value, sourceBCellIndex: 0 })}>
@@ -6062,6 +6129,137 @@ function MergeInspectorPanel({ widget, activePageId, updateWidget, updateWidgetR
     </>
   );
 }
+
+// OSC output scale: 0–1 / 0–10 / 0–100, float or int. The two selects, shared
+// by the per-mapping editors and the widget-wide row below.
+function OscScaleFields({ mapping, onChange }: {
+  mapping: import('../../../../shared/types/mapping').OscMapping | null | undefined;
+  onChange: (p: { range?: OscRange; argType?: OscArg }) => void;
+}): React.JSX.Element {
+  const sc = oscScaleOf(mapping);
+  return (
+    <Row>
+      <Field label="Range">
+        <select style={styles.input} value={String(sc.range)}
+          onChange={(e) => onChange({ range: Number(e.target.value) as OscRange })}>
+          {OSC_RANGES.map((r) => <option key={r} value={r}>0 – {r}</option>)}
+          {sc.range === 'custom' && <option value="custom" disabled>{sc.min} – {sc.max}</option>}
+        </select>
+      </Field>
+      <Field label="Type">
+        <select style={styles.input} value={sc.argType}
+          onChange={(e) => onChange({ argType: e.target.value as OscArg })}>
+          <option value="f">Float</option>
+          <option value="i">Int</option>
+        </select>
+      </Field>
+    </Row>
+  );
+}
+
+// Widget-wide: writes the same range/type into every OSC output of the widget.
+function OscScaleRow({ widget, activePageId }: { widget: import('../../../../shared/types/project').Widget; activePageId: string }): React.JSX.Element {
+  const sc = widgetOscScale(widget);
+  const fake = { type: 'osc', address: '', minValue: sc.min, maxValue: sc.max, argType: sc.argType } as import('../../../../shared/types/mapping').OscMapping;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 3 }}>OSC value (all cells)</div>
+      <OscScaleFields mapping={fake}
+        onChange={(p) => useStore.getState().updateWidget(activePageId, widget.id, setWidgetOscScalePatch(widget, p) as never)} />
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 3, lineHeight: 1.5 }}>
+        Slider at full sends {sc.argType === 'i' ? Math.round(sc.max) : sc.max}{sc.argType === 'i' ? ' as a whole number' : ' as a float'}.
+      </div>
+    </div>
+  );
+}
+
+// Eos faders for a whole bank widget: cell 1 on desk fader N, cell 2 on N+1…
+// through one OSC bank. The bank config Eos needs goes out by itself before the
+// first level; the button sends it now (watch Eos Tab 99).
+function EosFaderRow({ widget, activePageId }: { widget: import('../../../../shared/types/project').Widget; activePageId: string }): React.JSX.Element {
+  const cur = widgetEosFader(widget);
+  const [sent, setSent] = useState(0);
+  const apply = (first: number, bank: number): void =>
+    useStore.getState().updateWidget(activePageId, widget.id, setWidgetEosFaderPatch(widget, first, bank) as never);
+  const first = cur?.first ?? 0;
+  const bank = cur?.bank ?? 1;
+  const cells = ((widget as { cells?: { label: string; mapping: Mapping }[] }).cells ?? []);
+  const n = cells.length || 1;
+  const last = first ? first + n - 1 : 0;
+  const { page } = eosFaderPagePos(first || 1);
+  const { page: lastPage } = eosFaderPagePos(last || 1);
+  const configs = [...new Set(widgetOscMappings(widget).map((m) => eosConfigOf(m)).filter(Boolean))];
+  const setCell = (i: number, m: Mapping | null | undefined): void =>
+    useStore.getState().updateCell(activePageId, widget.id, i, { mapping: m });
+  const mono: React.CSSProperties = { ...styles.input, fontFamily: 'monospace', fontSize: 11, padding: '2px 4px' };
+  const hasAny = cells.some((c) => c.mapping?.type === 'osc' && (c.mapping as OscMappingT).eosFader);
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 3 }}>Eos faders</div>
+      <Row>
+        <Field label="First fader # (0 = off)">
+          <NumInput value={first} onChange={(v) => apply(Math.max(0, Math.min(100, Math.round(v))), bank)} />
+        </Field>
+        <Field label="OSC bank">
+          <NumInput value={bank} onChange={(v) => apply(first, Math.max(1, Math.min(99, Math.round(v))))} />
+        </Field>
+      </Row>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5, lineHeight: 1.5 }}>
+        {first > 0
+          ? <>Faders {first}–{last} → page {page}{lastPage !== page ? `–${lastPage}` : ''} through bank {bank}, cell by cell below.
+              {lastPage !== page && <b style={{ color: 'var(--color-accent)' }}> One bank shows one page of ten: split the widget, or use fewer cells.</b>}</>
+          : <>Type the desk number of the first fader (11 = page 2, position 1): every cell follows and the address + bank config are written below, each one editable.</>}
+      </div>
+
+      {cells.length > 0 && (
+        <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'minmax(40px, 1fr) 52px 2fr', gap: '3px 4px', alignItems: 'center', fontSize: 11 }}>
+          <span style={{ color: 'var(--color-text-dim)' }}>Cell</span>
+          <span style={{ color: 'var(--color-text-dim)' }}>Fader #</span>
+          <span style={{ color: 'var(--color-text-dim)' }}>OSC address</span>
+          {cells.map((c, i) => {
+            const m = c.mapping?.type === 'osc' ? (c.mapping as OscMappingT) : null;
+            const base: OscMappingT = m ?? { type: 'osc', address: '' };
+            return (
+              <React.Fragment key={i}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</span>
+                <NumberInput style={{ ...mono, width: 52 }} min={0} max={100} value={m?.eosFader ?? 0}
+                  onChange={(v) => setCell(i, withEosFader(base, v || undefined, bank))} />
+                <input style={mono} value={base.address}
+                  onChange={(e) => setCell(i, { ...base, address: e.target.value })} />
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 8, marginBottom: 3 }}>Bank config (sent before the first level)</div>
+      {configs.length === 0 && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-dim)', fontStyle: 'italic' }}>— none: no cell is on an Eos fader yet</div>
+      )}
+      {configs.map((cfg) => (
+        <input key={cfg} style={{ ...mono, width: '100%', marginBottom: 3 }} value={cfg}
+          title="Edit if your desk wants another; it is sent for every cell that shares it"
+          onChange={(e) => {
+            const next = e.target.value;
+            cells.forEach((c, i) => {
+              if (c.mapping?.type === 'osc' && eosConfigOf(c.mapping as OscMappingT) === cfg) setCell(i, { ...(c.mapping as OscMappingT), eosConfig: next });
+            });
+          }} />
+      ))}
+      <button
+        disabled={!hasAny}
+        style={{ ...styles.input, cursor: hasAny ? 'pointer' : 'default', marginTop: 4, opacity: hasAny ? 1 : 0.5 }}
+        onClick={() => { const k = sendWidgetEosConfigs(widget); setSent(k); setTimeout(() => setSent(0), 1500); }}>
+        {sent ? `✓ sent ${sent} config` : '⚡ Send bank config now'}
+      </button>
+      <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5, lineHeight: 1.5 }}>
+        Eos listens to a bank only after its config; it goes out by itself before the first level and once every few seconds while you move. Watch Eos Tab 99.
+      </div>
+    </div>
+  );
+}
+type OscMappingT = import('../../../../shared/types/mapping').OscMapping;
 
 // Eos user for one widget: writes it into every OSC output it has, so this
 // widget talks to the desk as its own user and does not fight the operator.

@@ -1,6 +1,23 @@
 import { eosAddress } from '../widgets/base/eosUser';
 import { bridge } from './bridge';
+import { oscOutValue, eosConfigOf, isEosConfigAddress } from '../../shared/types/mapping';
 import type { Mapping } from '../../shared/types/mapping';
+
+// ─── Eos fader bank config ─────────────────────────────────────────────────────
+// Eos listens to an OSC fader bank only once told which page it shows and how
+// many faders it holds. The config goes out before a level, and again after a
+// pause (an Eos restarted meanwhile picks it up) — at most once every 3 s per
+// message, unless forced (the "Send config" buttons).
+const eosConfigured = new Map<string, number>();
+
+export function sendEosConfig(msg: string, user?: number, outputId?: string, force = false): void {
+  if (!msg) return;
+  const key = `${outputId ?? ''}|${msg}`;
+  const now = Date.now();
+  if (!force && now - (eosConfigured.get(key) ?? 0) < 3000) return;
+  eosConfigured.set(key, now);
+  bridge.send('tr:osc:send', { address: eosAddress(msg, user), args: [], outputId });
+}
 
 // ─── Master gains ───────────────────────────────────────────────────────────────
 // A MasterLevel widget scales EVERYTHING going out on one protocol by multiplying
@@ -49,10 +66,15 @@ export function dispatchValue(mapping: Mapping, value: number): void {
       break;
     }
     case 'osc': {
-      const oscVal = (mapping.minValue !== undefined && mapping.maxValue !== undefined)
-        ? v * (mapping.maxValue - mapping.minValue) + mapping.minValue
-        : v;
-      bridge.send('tr:osc:send', { address: eosAddress(mapping.address, mapping.user), args: [{ type: 'f', value: oscVal }], outputId: mapping.outputId });
+      // A button whose address IS an Eos bank config: bare message, on press only.
+      if (isEosConfigAddress(mapping.address)) {
+        if (v >= 0.5) sendEosConfig(mapping.address, mapping.user, mapping.outputId, true);
+        break;
+      }
+      // An Eos fader: the desk must know the bank before it listens to the level.
+      const cfg = eosConfigOf(mapping);
+      if (cfg) sendEosConfig(cfg, mapping.user, mapping.outputId);
+      bridge.send('tr:osc:send', { address: eosAddress(mapping.address, mapping.user), args: [oscOutValue(mapping, v)], outputId: mapping.outputId });
       break;
     }
     case 'artnet': {

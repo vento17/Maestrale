@@ -1,31 +1,22 @@
 import React from 'react';
 import type { Widget, Page } from '../../../shared/types/project';
 import LiveWidgetInner from './LiveWidgetInner';
+import WidgetChrome from '../../widgets/base/WidgetChrome';
 import { useStore } from '../../store';
 
 function LiveWidget({ widget, onSelect }: { widget: Widget; onSelect?: (id: string) => void }): React.JSX.Element {
   const isPassthrough = widget.kind === 'imageWidget' || widget.kind === 'textWidget';
 
-  const inner = <LiveWidgetInner widget={widget} />;
-
-  const s          = widget.style;
-  const frame      = s.frame ?? 'none';
-  const frameColor = s.frameColor ?? '#ffffff';
-  const frameSize  = s.frameSize  ?? 1;
-
   return (
-    <div
-      style={{
+    <WidgetChrome
+      style={widget.style}
+      label={widget.label}
+      outerStyle={{
         position: 'absolute',
         left: widget.rect.x,
         top: widget.rect.y,
         width: widget.rect.width,
         height: widget.rect.height,
-        borderRadius: s.borderRadius,
-        overflow: 'hidden',
-        background: s.backgroundColor,
-        boxSizing: 'border-box',
-        boxShadow: frame === 'outline' ? `inset 0 0 0 ${frameSize}px ${frameColor}` : undefined,
         pointerEvents: isPassthrough ? 'none' : undefined,
       }}
       data-lf-patch={widget.id}
@@ -36,14 +27,8 @@ function LiveWidget({ widget, onSelect }: { widget: Widget; onSelect?: (id: stri
       onMouseMove={() => useStore.getState().setHoverInfo(`${widget.label} · ${widget.kind}`)}
       onMouseLeave={() => useStore.getState().setHoverInfo(null)}
     >
-      {inner}
-      {frame === 'underline' && (
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          height: frameSize, background: frameColor, pointerEvents: 'none',
-        }} />
-      )}
-    </div>
+      <LiveWidgetInner widget={widget} />
+    </WidgetChrome>
   );
 }
 

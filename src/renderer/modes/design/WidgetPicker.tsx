@@ -51,7 +51,7 @@ const WIDGET_GROUPS: { title: string; col?: number; items: WidgetOption[] }[] = 
   ] },
   { title: 'Routing', col: 3, items: [
     { kind: 'router',        label: 'Router',         description: 'Its own routing rows (one input to many outputs), edited in its settings. Links made by Shift, right-click and Learn live in the Router page.' },
-    { kind: 'mathWidget',    label: 'Math / Merge',   description: 'Combine two cell sources with add, subtract, multiply, min, max, avg, invert.' },
+    { kind: 'mathWidget',    label: 'Math / Merge',   description: 'Combine any number of cabled inputs with add, subtract, multiply, min, max, avg, invert; then multiply the result (×100…).' },
     { kind: 'merge',         label: 'Merge',          description: 'Drop as many cables as you like on its box; merges them in groups (3 = R G B) HTP, LTP, lowest or average, with a smooth glide.' },
     { kind: 'shell',         label: 'Shell',          description: 'Buttons that act on the PC: turn off, restart, sleep, open a file or web page, a command. Inputs: fire them from a clock row.' },
     { kind: 'instance',      label: 'Instance',       description: 'Bound copy of another widget — shares the exact same value across pages.' },

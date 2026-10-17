@@ -75,6 +75,8 @@ function driveCell(widgetId: string, cellIdx: number, v: number, isButton: boole
   if (cellIdx < 0) {
     const tw = findWidget(widgetId);
     if (tw?.kind === 'merge') { setMergeInput(widgetId, -cellIdx, v); return; }
+    // Math: in k (any number of them, like the Merge box) → a parameter input.
+    if (tw?.kind === 'mathWidget') { setParamInput(widgetId, `in${-cellIdx}`, v); return; }
     if (tw?.kind === 'timeline') { driveTimelineTransport(widgetId, cellIdx, v, initial); return; }
     // Continuous parameter inputs (LFO SPEED / RATE / PHASE): just the value.
     const pi = tw ? paramInputOf(tw, cellIdx) : undefined;

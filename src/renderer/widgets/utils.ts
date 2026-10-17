@@ -1,5 +1,6 @@
 import { CELLS_PER_PAGE, pageCount } from './IControls/iControlsMidi';
 import type { Widget, ValueDisplayMode, TimelineWidget, TrigTrack, CueTrack } from '../../shared/types/project';
+import { oscOutValue } from '../../shared/types/mapping';
 import type { Mapping } from '../../shared/types/mapping';
 
 // Individual trig markers exposed as their own source cells, laid out AFTER the
@@ -94,6 +95,7 @@ export function formatCellValue(value: number, mapping: Mapping, format: ValueDi
   // protocol
   if (!mapping) return value.toFixed(2);
   if (mapping.type === 'osc') {
+    if (mapping.argType === 'i') return String(oscOutValue(mapping, value).value);
     if (mapping.minValue !== undefined && mapping.maxValue !== undefined) {
       return (value * (mapping.maxValue - mapping.minValue) + mapping.minValue).toFixed(1);
     }

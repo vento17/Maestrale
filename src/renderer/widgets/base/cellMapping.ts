@@ -42,6 +42,6 @@ export function cellMapping(project: Project, widgetId: string, cellIndex: numbe
 // The numbers a mapping actually puts on the wire for 0 and 1.
 export function mappingScale(m: Mapping): { lo: number; hi: number; int: boolean } {
   if (!m) return { lo: 0, hi: 1, int: false };
-  if (m.type === 'osc') return { lo: m.minValue ?? 0, hi: m.maxValue ?? 1, int: false };
+  if (m.type === 'osc') return { lo: m.minValue ?? 0, hi: m.maxValue ?? 1, int: m.argType === 'i' };
   return { lo: m.minValue, hi: m.maxValue, int: true };
 }

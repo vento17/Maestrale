@@ -4,6 +4,7 @@ import type { DmxRecorderWidget, DmxPlayerWidget, ClockWidget, DmxMonitorWidget 
 import ClockDesign from '../Clock/ClockDesign';
 import DmxMonitorDesign from '../DmxMonitor/DmxMonitorDesign';
 import React from 'react';
+import WidgetChrome from './WidgetChrome';
 import type { Widget, CuesWidget, TimelineWidget, SpoutInputWidget, NdiInputWidget, SubmastersWidget, RouterWidget, AudioAnalyserWidget, SoundPlayerWidget, LfoWidget, MathWidget, ValueDisplayWidget, MasterLevelWidget, AudioLevelWidget, SketchWidget, InstanceWidget, ManualWidget, KeyboardWidget } from '../../../shared/types/project';
 import SliderBankDesign from '../SliderBank/SliderBankDesign';
 import SketchDesign from '../Sketch/SketchDesign';
@@ -80,28 +81,5 @@ export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX
     }
   })();
 
-  const s = widget.style;
-  const frame      = s.frame ?? 'none';
-  const frameColor = s.frameColor ?? '#ffffff';
-  const frameSize  = s.frameSize  ?? 1;
-
-  return (
-    <div style={{
-      width: '100%', height: '100%',
-      borderRadius: s.borderRadius,
-      overflow: 'hidden',
-      background: s.backgroundColor,
-      position: 'relative',
-      boxSizing: 'border-box',
-      boxShadow: frame === 'outline' ? `inset 0 0 0 ${frameSize}px ${frameColor}` : undefined,
-    }}>
-      {inner}
-      {frame === 'underline' && (
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          height: frameSize, background: frameColor, pointerEvents: 'none',
-        }} />
-      )}
-    </div>
-  );
+  return <WidgetChrome style={widget.style} label={widget.label}>{inner}</WidgetChrome>;
 }

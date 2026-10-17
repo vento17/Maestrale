@@ -25,6 +25,12 @@ export interface WidgetStyle {
   frame?: 'none' | 'outline' | 'underline';
   frameColor?: string;
   frameSize?: number;
+  // The thin edge every widget has, and the title bar that grows out of its
+  // top edge when showTitle is on (the widget's own label, in titleFontSize px).
+  edgeSize?: number;        // px, default 2
+  edgeColor?: string;       // default '#3a3a3a'
+  showTitle?: boolean;      // default false
+  titleFontSize?: number;   // px, default 12
 }
 
 // ─── Widget Types ─────────────────────────────────────────────────────────────
@@ -630,8 +636,10 @@ export interface LfoWidget extends WidgetBase {
 }
 
 // ─── Math / Merge Widget ──────────────────────────────────────────────────────
-// Combines up to two cell sources with a math operation.
-// cells[0] = computed result
+// Combines any number of inputs with a math operation. cells[0] = computed result.
+// Like the Merge, its box takes any number of cables (in 1, in 2 … at negative
+// cells, from the Router); in 1 / in 2 fall back to the Source A / B pickers
+// when nothing is cabled. One cable alone passes through (× gain), two add up…
 
 export type MathOperation = 'add' | 'subtract' | 'multiply' | 'min' | 'max' | 'avg' | 'invert' | 'abs';
 
@@ -642,6 +650,8 @@ export interface MathWidget extends WidgetBase {
   sourceBWidgetId: string;
   sourceBCellIndex: number;
   operation: MathOperation;
+  // Multiplies the final result (after range + clamp): ×100 turns 0–1 into 0–100.
+  gain?: number;
   // The operation result is read as a position inside [inMin, inMax], then
   // re-mapped onto [outMin, outMax]. Leaving both at 0–1 passes it straight
   // through. Reversing the output pair (outMin > outMax) inverts.

@@ -132,10 +132,10 @@ function measure(pending: PendingLink[] = []): Geometry {
       });
     });
 
-    // Merge: one box takes any number of cables. Each connected input gets a
+    // Merge and Math: one box takes any number of cables. Each connected input gets a
     // port along the box's left edge; the box itself is the drop target for
     // the next one (MERGE_NEXT, resolved to the first free input on drop).
-    if (w.kind === 'merge') {
+    if (w.kind === 'merge' || w.kind === 'mathWidget') {
       const box2 = root.querySelector<HTMLElement>(`[data-lf-merge-in="${CSS.escape(w.id)}"]`)?.getBoundingClientRect();
       if (box2 && box2.width > 0) {
         const ks = new Set(connectedInputs(project, w.id));

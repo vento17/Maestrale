@@ -4,6 +4,10 @@ import { useShallow } from 'zustand/react/shallow';
 import type { OutputProtocol } from '../../../shared/types/project';
 import { useStore, useActivePage } from '../../store';
 import NumberInput from './NumberInput';
+import { oscScaleOf, withOscScale, OSC_RANGES } from './oscScale';
+import type { OscRange, OscArg } from './oscScale';
+import { withEosFader, sendMappingEosConfig } from './eosFader';
+import { eosConfigOf } from '../../../shared/types/mapping';
 
 interface Props {
   widgetId: string;
@@ -112,7 +116,7 @@ function CellEditModalInner({ widgetId, pageId, onClose }: Props): React.JSX.Ele
                 <Th>Name</Th>
                 <Th>Color</Th>
                 {proto === 'midi'   && <><Th>Ch</Th><Th>Msg</Th><Th>CC / Note</Th></>}
-                {proto === 'osc'    && <Th style={{ minWidth: 200 }}>OSC Address</Th>}
+                {proto === 'osc'    && <><Th style={{ minWidth: 200 }}>OSC Address</Th><Th>Range</Th><Th>Type</Th><Th>Eos fader #</Th><Th>Bank config</Th></>}
                 {proto === 'artnet' && <><Th>Universe</Th><Th>Channel</Th></>}
                 {proto === 'sacn'   && <><Th>Universe</Th><Th>Channel</Th><Th>Priority</Th></>}
                 {proto === 'enttec' && <Th>DMX Channel</Th>}
@@ -207,13 +211,50 @@ function CellRow({ index, cell, proto, isButton, onChange }: {
         </>
       )}
 
-      {proto === 'osc' && (
-        <Td>
-          <input style={{ ...inp, width: '100%', minWidth: 180 }}
-            value={osc?.address ?? `/ch/${index + 1}`}
-            onChange={(e) => onChange({ mapping: { type: 'osc', address: e.target.value } })} />
-        </Td>
-      )}
+      {proto === 'osc' && (() => {
+        const base = osc ?? { type: 'osc' as const, address: `/ch/${index + 1}` };
+        const sc = oscScaleOf(osc);
+        return (
+          <>
+            <Td>
+              <input style={{ ...inp, width: '100%', minWidth: 180 }}
+                value={base.address}
+                onChange={(e) => onChange({ mapping: { ...base, address: e.target.value } })} />
+            </Td>
+            <Td>
+              <select style={{ ...inp, width: 74 }} value={String(sc.range)}
+                onChange={(e) => onChange({ mapping: withOscScale(base, { range: Number(e.target.value) as OscRange }) })}>
+                {OSC_RANGES.map((r) => <option key={r} value={r}>0–{r}</option>)}
+                {sc.range === 'custom' && <option value="custom" disabled>{sc.min}–{sc.max}</option>}
+              </select>
+            </Td>
+            <Td>
+              <select style={{ ...inp, width: 64 }} value={sc.argType}
+                onChange={(e) => onChange({ mapping: withOscScale(base, { argType: e.target.value as OscArg }) })}>
+                <option value="f">Float</option>
+                <option value="i">Int</option>
+              </select>
+            </Td>
+            <Td>
+              <NumberInput style={{ ...inp, width: 48 }} min={0} max={100}
+                value={osc?.eosFader ?? 0}
+                onChange={(v) => onChange({ mapping: withEosFader(base, v || undefined) })} />
+            </Td>
+            <Td>
+              {osc?.eosFader ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input style={{ ...inp, width: 190, fontFamily: 'monospace' }}
+                    value={osc.eosConfig ?? eosConfigOf(osc)}
+                    title="Sent before the level so Eos listens to the bank; edit it if your desk wants another"
+                    onChange={(e) => onChange({ mapping: { ...osc, eosConfig: e.target.value } })} />
+                  <button style={{ ...inp, cursor: 'pointer', padding: '2px 6px' }} title="Send this config to Eos now"
+                    onClick={() => sendMappingEosConfig(osc)}>⚡</button>
+                </div>
+              ) : <span style={{ color: 'var(--color-text-dim)', fontSize: 11 }}>—</span>}
+            </Td>
+          </>
+        );
+      })()}
 
       {proto === 'artnet' && (
         <>

@@ -59,6 +59,9 @@ export function pulseParamInput(widgetId: string, key: string): void {
   setParamInput(widgetId, key, 0);
 }
 
+// Math inputs are not listed here: like the Merge, its box takes any number of
+// cables (in 1, in 2 … at −1, −2 …), each landing on param input `in<k>`.
+
 export function paramInputsOf(widget: Widget): ParamInput[] {
   if (widget.kind === 'timeline') return TIMELINE_TRANSPORT.map((t) => ({ index: t.index, key: t.cmd, label: t.label, hint: t.hint }));
   if (widget.kind === 'lfoWidget' || widget.kind === 'noiseWidget') return LFO_INPUTS;

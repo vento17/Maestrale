@@ -30,7 +30,53 @@ export interface OscMapping {
   args?: OscArgType[];   // fixed args prepended before value
   minValue?: number;     // if set, rescale value: out = v*(max-min)+min
   maxValue?: number;
+  // The OSC type the value goes out as: 'f' float (default) or 'i' integer
+  // (rounded). With minValue/maxValue 0–10 or 0–100 this gives whole steps.
+  argType?: 'f' | 'i';
+  // ETC Eos fader. Eos only listens to an OSC fader bank after being told which
+  // page it shows and how many faders it holds, so a mapping that drives an Eos
+  // fader carries the desk fader number (1 … 100) and the bank it goes through:
+  // the address and the config message are derived from them, and the config
+  // (eosConfig, editable) goes out before the level, throttled.
+  eosFader?: number;     // desk fader number, 1 … 100 (fader 11 = page 2, position 1)
+  eosBank?: number;      // OSC bank index, default 1
+  eosConfig?: string;    // '/eos/fader/<bank>/config/<page>/10' unless overridden
   outputId?: string;
+}
+
+/** Eos: fader number → page (10 per page) and position in that page. */
+export function eosFaderPagePos(fader: number): { page: number; pos: number } {
+  const f = Math.max(1, Math.round(fader));
+  return { page: Math.ceil(f / 10), pos: ((f - 1) % 10) + 1 };
+}
+
+/** The level address and the bank config message for an Eos fader. */
+export function eosFaderAddresses(fader: number, bank = 1): { address: string; config: string } {
+  const { page, pos } = eosFaderPagePos(fader);
+  const b = Math.max(1, Math.round(bank || 1));
+  return { address: `/eos/fader/${b}/${pos}`, config: `/eos/fader/${b}/config/${page}/10` };
+}
+
+/** The config message an OSC mapping needs before Eos listens to it, or ''. */
+export function eosConfigOf(m: OscMapping): string {
+  if (m.eosConfig?.trim()) return m.eosConfig.trim();
+  if (m.eosFader) return eosFaderAddresses(m.eosFader, m.eosBank).config;
+  return '';
+}
+
+/** Is this address itself an Eos bank config message? (sent bare, on press) */
+export function isEosConfigAddress(address: string): boolean {
+  return /^\/eos\/(user\/\d+\/)?fader\/\d+\/config\//.test(address);
+}
+
+/** The scaled number (and OSC type) an OSC mapping puts on the wire for v. */
+export function oscOutValue(m: OscMapping, v: number): { type: 'f' | 'i'; value: number } {
+  const scaled = (m.minValue !== undefined && m.maxValue !== undefined)
+    ? v * (m.maxValue - m.minValue) + m.minValue
+    : v;
+  return m.argType === 'i'
+    ? { type: 'i', value: Math.round(scaled) }
+    : { type: 'f', value: scaled };
 }
 
 export type OscArgType = 'float' | 'int' | 'string';

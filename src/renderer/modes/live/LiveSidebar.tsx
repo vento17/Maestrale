@@ -208,16 +208,22 @@ function MathParams({ w, update }: { w: MathWidget; update: UpdateFn }): React.J
         label="Operation"
         value={w.operation}
         options={[
-          { value: 'add',      label: 'A + B  (Add)' },
-          { value: 'subtract', label: 'A − B  (Subtract)' },
-          { value: 'multiply', label: 'A × B  (Multiply)' },
-          { value: 'min',      label: 'Min(A, B)' },
-          { value: 'max',      label: 'Max(A, B)' },
-          { value: 'avg',      label: 'Avg(A, B)' },
-          { value: 'invert',   label: '1 − A  (Invert)' },
-          { value: 'abs',      label: '|A|  (Abs)' },
+          { value: 'add',      label: 'Add  (sum of inputs)' },
+          { value: 'subtract', label: 'Subtract  (in 1 − the rest)' },
+          { value: 'multiply', label: 'Multiply  (product)' },
+          { value: 'min',      label: 'Min' },
+          { value: 'max',      label: 'Max' },
+          { value: 'avg',      label: 'Average' },
+          { value: 'invert',   label: '1 − in 1  (Invert)' },
+          { value: 'abs',      label: '|in 1|  (Abs)' },
         ]}
         onChange={(v) => update({ operation: v as MathOperation })}
+      />
+      <SliderRow
+        label="Multiply ×"
+        value={w.gain ?? 1} min={0} max={100} step={1}
+        fmt={(v) => `×${Number(v.toFixed(2))}`}
+        onChange={(v) => update({ gain: v })}
       />
       <SliderRow
         label="In min"
