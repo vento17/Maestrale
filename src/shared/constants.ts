@@ -42,6 +42,7 @@ export const DEFAULT_ETC_RECT            = { x: 0, y: 0, width: 1330, height: 66
 export const DEFAULT_ENCODER_RECT        = { x: 0, y: 0, width: 520, height: 200 };
 export const DEFAULT_ICONTROLS_RECT      = { x: 0, y: 0, width: 640, height: 360 };
 export const DEFAULT_SHELL_RECT          = { x: 0, y: 0, width: 300, height: 160 };
+export const DEFAULT_STARTUP_RECT        = { x: 0, y: 0, width: 260, height: 140 };
 export const DEFAULT_PALETTE_RECT        = { x: 0, y: 0, width: 400, height: 220 };
 export const DEFAULT_MERGE_RECT          = { x: 0, y: 0, width: 300, height: 220 };
 export const DEFAULT_AUDIO_LEVEL_RECT    = { x: 0, y: 0, width: 130, height: 340 };

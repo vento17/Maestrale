@@ -84,7 +84,8 @@ export default function KeyboardLive({ widget }: { widget: KeyboardWidget }): Re
       return widgetRef.current.keys.findIndex((k) => k.code === code);
     }
     function onDown(e: KeyboardEvent): void {
-      if (isTyping(e.target)) return;
+      // Live stays mounted behind Design: keys there belong to the editor.
+      if (isTyping(e.target) || useStore.getState().mode !== 'live') return;
       // Auto-repeat must not re-fire a held key.
       if (e.repeat) return;
       const i = indexOf(e.code);

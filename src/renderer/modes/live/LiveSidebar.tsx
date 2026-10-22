@@ -21,14 +21,20 @@ import { setPaletteCount } from '../../widgets/Palette/PaletteLive';
 import ExcludeList from '../../widgets/base/ExcludeList';
 import { SUBMASTER_KINDS } from '../../widgets/base/links';
 import { quantLabel } from '../../widgets/base/paramInputs';
+import { ParamTabs, useParamTab } from '../paramTabs';
+import type { ParamTab } from '../paramTabs';
+import { EDGE_SIZE_DEFAULT, TITLE_FONT_DEFAULT } from '../../widgets/base/WidgetChrome';
 
 type UpdateFn = (patch: Record<string, unknown>) => void;
 
 // ─── Reusable control rows ────────────────────────────────────────────────────
 
-function Row({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
+// Each row sorts itself into a parameter tab (Widget / Look / Output) — see
+// modes/paramTabs.tsx; `tab` overrides the guess from the label.
+function Row({ label, children, tab }: { label: string; children: React.ReactNode; tab?: ParamTab }): React.JSX.Element {
+  const hidden = useParamTab(label, tab);
   return (
-    <div style={{ padding: '7px 12px', borderBottom: '1px solid #111' }}>
+    <div hidden={hidden} style={{ padding: '7px 12px', borderBottom: '1px solid #111' }}>
       <div style={{ fontSize: 9, letterSpacing: 1.5, color: '#3a3a3a', textTransform: 'uppercase', marginBottom: 5 }}>
         {label}
       </div>
@@ -37,12 +43,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }):
   );
 }
 
-function SliderRow({ label, value, min, max, step, fmt, onChange }: {
+function SliderRow({ label, value, min, max, step, fmt, onChange, tab }: {
   label: string; value: number; min: number; max: number;
-  step?: number; fmt?: (v: number) => string; onChange: (v: number) => void;
+  step?: number; fmt?: (v: number) => string; onChange: (v: number) => void; tab?: ParamTab;
 }): React.JSX.Element {
   return (
-    <Row label={label}>
+    <Row label={label} tab={tab}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <input
           type="range" min={min} max={max} step={step ?? 0.01} value={value}
@@ -435,9 +441,9 @@ function CellBankParams({ w, onEditCells }: {
           ✏ Edit cells ({cells})
         </button>
       </Row>
-      <div style={{ fontSize: 10, color: '#3a3a3a', padding: '2px 12px 8px', lineHeight: 1.5 }}>
+      <TabBox tab="Widget" style={{ fontSize: 10, color: '#3a3a3a', padding: '2px 12px 8px', lineHeight: 1.5 }}>
         Names, colours, mappings — and behaviour on a button grid — one cell at a time.
-      </div>
+      </TabBox>
     </>
   );
 }
@@ -450,7 +456,49 @@ function NoParams({ kind }: { kind: string }): React.JSX.Element {
   );
 }
 
+// LOOK tab, on every widget: the name on its edge and the edge itself — the
+// things you tweak while the show is on.
+function LookParams({ w, update }: { w: Widget; update: UpdateFn }): React.JSX.Element {
+  const s = w.style;
+  const patchStyle = (p: Record<string, unknown>): void => update({ style: { ...s, ...p } });
+  return (
+    <>
+      <Row label="Show name" tab="Look">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#888', cursor: 'pointer' }}>
+          <input type="checkbox" checked={s.showTitle ?? false} onChange={(e) => patchStyle({ showTitle: e.target.checked })} />
+          {w.label}
+        </label>
+      </Row>
+      {s.showTitle && (
+        <SliderRow label="Title font" tab="Look"
+          value={s.titleFontSize ?? TITLE_FONT_DEFAULT} min={6} max={48} step={1}
+          fmt={(v) => `${Math.round(v)}px`}
+          onChange={(v) => patchStyle({ titleFontSize: Math.round(v) })} />
+      )}
+      <SliderRow label="Edge" tab="Look"
+        value={s.edgeSize ?? EDGE_SIZE_DEFAULT} min={0} max={12} step={1}
+        fmt={(v) => `${Math.round(v)}px`}
+        onChange={(v) => patchStyle({ edgeSize: Math.round(v) })} />
+      <SliderRow label="Font size" tab="Look"
+        value={s.fontSize} min={6} max={64} step={1}
+        fmt={(v) => `${Math.round(v)}px`}
+        onChange={(v) => patchStyle({ fontSize: Math.round(v) })} />
+    </>
+  );
+}
+
 function ParamPanel({ widget, update, onEditCells }: {
+  widget: Widget; update: UpdateFn; onEditCells: () => void;
+}): React.JSX.Element {
+  return (
+    <ParamTabs key={widget.id} dark>
+      <KindParams widget={widget} update={update} onEditCells={onEditCells} />
+      <LookParams w={widget} update={update} />
+    </ParamTabs>
+  );
+}
+
+function KindParams({ widget, update, onEditCells }: {
   widget: Widget; update: UpdateFn; onEditCells: () => void;
 }): React.JSX.Element {
   switch (widget.kind) {
@@ -472,10 +520,16 @@ function ParamPanel({ widget, update, onEditCells }: {
     case 'merge':         return <MergeParams w={widget} update={update} />;
     case 'sketch':        return <SketchParams w={widget} update={update} />;
     case 'palette':       return <PaletteParams w={widget} update={update} />;
-    case 'etc':           return <div style={{ padding: '0 12px 12px' }}><EtcSettings w={widget as import('../../../shared/types/project').EtcWidget} update={update} /></div>;
-    case 'encoder':       return <div style={{ padding: '0 12px 12px' }}><EncoderSettings w={widget as import('../../../shared/types/project').EncoderWidget} update={update} /></div>;
-    default:              return <NoParams kind={widget.kind} />;
+    case 'etc':           return <TabBox tab="Widget" style={{ padding: '0 12px 12px' }}><EtcSettings w={widget as import('../../../shared/types/project').EtcWidget} update={update} /></TabBox>;
+    case 'encoder':       return <TabBox tab="Widget" style={{ padding: '0 12px 12px' }}><EncoderSettings w={widget as import('../../../shared/types/project').EncoderWidget} update={update} /></TabBox>;
+    default:              return <TabBox tab="Widget"><NoParams kind={widget.kind} /></TabBox>;
   }
+}
+
+// Content that is not a Row (a whole settings block) but belongs to one tab.
+function TabBox({ tab, style, children }: { tab: ParamTab; style?: React.CSSProperties; children: React.ReactNode }): React.JSX.Element {
+  const hidden = useParamTab(tab, tab);
+  return <div hidden={hidden} style={style}>{children}</div>;
 }
 
 function MergeParams({ w, update }: { w: MergeWidget; update: UpdateFn }): React.JSX.Element {

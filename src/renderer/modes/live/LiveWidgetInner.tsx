@@ -40,6 +40,7 @@ import KeyboardLive from '../../widgets/Keyboard/KeyboardLive';
 import ShellLive from '../../widgets/Shell/ShellLive';
 import PaletteLive from '../../widgets/Palette/PaletteLive';
 import MergeLive from '../../widgets/Merge/MergeLive';
+import StartupLive from '../../widgets/Startup/StartupLive';
 
 // The live rendering of a single widget's inner content (no positioning wrapper).
 // Shared by LiveCanvas and by the Instance widget (which renders its source here).
@@ -81,6 +82,7 @@ export default function LiveWidgetInner({ widget }: { widget: Widget }): React.J
     case 'shell':         return <ShellLive widget={widget} />;
     case 'palette':       return <PaletteLive widget={widget} />;
     case 'merge':         return <MergeLive widget={widget} />;
+    case 'startup':       return <StartupLive widget={widget} />;
     default:              return null;
   }
 }

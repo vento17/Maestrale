@@ -49,23 +49,31 @@ async function exec(b: ShellButton): Promise<void> {
   else st.addLog('error', `Shell: ${b.label || def?.name || b.action} — ${res?.error ?? 'failed'}`);
 }
 
+/** Seconds a button waits before it runs: power actions default to 10, the rest to 0. */
+export function shellDelayOf(b: ShellButton): number {
+  const def = shellAction(b.action);
+  return Math.max(0, Math.min(600, Math.round(b.delay ?? (def?.power ? 10 : 0))));
+}
+
 export function fireShellButton(w: ShellWidget, index: number): void {
   const b = w.buttons[index];
   if (!b) return;
   const def = shellAction(b.action);
   const key = `${w.id}:${b.id}`;
-  if (def?.power) {
-    // Pressed again while counting down: cancel.
+  if (b.action === 'cancelShutdown') { cancelCountdown(); void exec(b); return; }
+  // Any button can wait first (a program opened a minute after the clock
+  // fires, a turn off with time to change your mind): the countdown shows on
+  // every Shell widget, with Cancel; pressing the button again cancels too.
+  const secs = shellDelayOf(b);
+  if (secs > 0 || def?.power) {
     if (countdown?.key === key) { cancelCountdown(); return; }
     if (countdown) cancelCountdown();
-    const secs = Math.max(0, Math.min(600, b.delay ?? 10));
-    const label = b.label || def.name;
+    const label = b.label || def?.name || b.action;
     if (secs === 0) { void exec(b); return; }
     countdown = { key, label, until: Date.now() + secs * 1000, timer: setTimeout(() => { countdown = null; notify(); void exec(b); }, secs * 1000) };
     useStore.getState().addLog('warn', `Shell: ${label} in ${secs} s — press again or Cancel to stop`);
     notify();
     return;
   }
-  if (b.action === 'cancelShutdown') { cancelCountdown(); }
   void exec(b);
 }

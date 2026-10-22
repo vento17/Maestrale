@@ -146,11 +146,6 @@ body.lf-learn .lf-learn-zone {
 /* Native controls in the palette (no system blue). */
 input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--lf-aqua); }
 
-/* Shift patching: hide the widgets' own text so dots and cables read clearly. */
-body.lf-patching [data-lf-patch],
-body.lf-patching [data-lf-patch] * {
-  color: transparent !important;
-  text-shadow: none !important;
-}
-body.lf-patching [data-lf-patch] svg text { fill: transparent !important; }
-body.lf-patching [data-lf-patch] input::placeholder { color: transparent !important; }
+/* Shift patching: the widgets keep their own look (body.lf-patching is still
+   set while patching, for anything that wants to know). The dots and cables
+   are drawn over them in their own layer. */

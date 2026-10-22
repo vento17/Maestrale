@@ -35,7 +35,7 @@ const KIND_NAME: Partial<Record<Widget['kind'], string>> = {
   stepSequencer: 'step sequencer', graphWidget: 'graph', submasters: 'submasters',
   autoBpm: 'auto bpm', timeline: 'timeline', audioAnalyser: 'audio analyser',
   soundPlayer: 'sound player', cues: 'cues', lfoWidget: 'lfo', noiseWidget: 'noise', sketch: 'sketch', mathWidget: 'math',
-  masterLevel: 'master', audioLevel: 'audio level', keyboard: 'keyboard', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge', iControls: 'icontrols',
+  masterLevel: 'master', audioLevel: 'audio level', keyboard: 'keyboard', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', encoder: 'encoder', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge', iControls: 'icontrols', startup: 'startup',
 };
 const PARAM_NAME: Partial<Record<Widget['kind'], string>> = {
   sliderBank: 'fader', knobBank: 'knob', buttonGrid: 'button', xyPad: 'axis',

@@ -1,9 +1,9 @@
 @echo off
 rem Publishes the current folder to GitHub as a new version of Maestrale.
-rem Usage: double-click, or "scripts\publish.bat 0.4.2"
+rem Usage: double-click, or "scripts\publish.bat 0.4.3"
 cd /d "%~dp0.."
 set VER=%1
-if "%VER%"=="" set VER=0.4.2
+if "%VER%"=="" set VER=0.4.3
 set REPO=https://github.com/vento17/Maestrale.git
 echo === Maestrale %VER% ===
 

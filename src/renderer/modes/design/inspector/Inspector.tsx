@@ -25,6 +25,8 @@ import ResizableColumn from '../../ResizableColumn';
 import { widgetEosUser, setWidgetEosUserPatch } from '../../../widgets/base/eosUser';
 import { EDGE_SIZE_DEFAULT, EDGE_COLOR_DEFAULT, TITLE_FONT_DEFAULT } from '../../../widgets/base/WidgetChrome';
 import { widgetEosFader, setWidgetEosFaderPatch, sendWidgetEosConfigs, widgetOscMappings, withEosFader } from '../../../widgets/base/eosFader';
+import { ParamTabs, useParamTab } from '../../paramTabs';
+import type { ParamTab } from '../../paramTabs';
 import { eosConfigOf, eosFaderPagePos } from '../../../../shared/types/mapping';
 import { widgetOscScale, setWidgetOscScalePatch, oscScaleOf, withOscScale, OSC_RANGES } from '../../../widgets/base/oscScale';
 import type { OscRange, OscArg } from '../../../widgets/base/oscScale';
@@ -32,6 +34,7 @@ import { XY_PRESETS, applyXYPreset, defaultZ } from '../../../widgets/XYPad/xyPr
 import { ShellButtonEditor } from '../../../widgets/Shell/ShellLive';
 import { ColorEditor, setPaletteCount } from '../../../widgets/Palette/PaletteLive';
 import { shellAction } from '../../../../shared/shellActions';
+import { shellDelayOf } from '../../../widgets/Shell/shellRun';
 import type { DmxInputStatusPayload } from '../../../../shared/types/ipc';
 import { dispatchValue, dispatchButton } from '../../../ipc/dispatch';
 import {
@@ -67,7 +70,7 @@ export default function Inspector(): React.JSX.Element {
     <div style={{ ...styles.panel, width: '100%', height: '100%', boxSizing: 'border-box' }}>
       {isSettingsOpen
         ? <SettingsPanel />
-        : widget && activePageId
+        : <ParamTabs key={widget?.id ?? 'none'}>{widget && activePageId
           ? widget.kind === 'imageWidget'
             ? <ImagePanel widget={widget as ImageWidget} activePageId={activePageId} updateWidget={updateWidget} />
             : widget.kind === 'textWidget'
@@ -132,14 +135,17 @@ export default function Inspector(): React.JSX.Element {
                                                   ? <PaletteInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                 : widget.kind === 'merge'
                                                   ? <MergeInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
+                                                : widget.kind === 'startup'
+                                                  ? <StartupInspectorPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                 : widget.kind === 'manual'
                                                   ? <ManualInspectorPanel widget={widget as import('../../../../shared/types/project').ManualWidget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
                                                   : <WidgetPanel widget={widget} activePageId={activePageId} updateWidget={updateWidget} updateWidgetRect={updateWidgetRect} />
-          : <NoSelectionPanel />
+          : <NoSelectionPanel />}
+          {widget && activePageId && (
+            <TitleEdgeSection widget={widget} activePageId={activePageId} updateWidget={updateWidget} />
+          )}
+          </ParamTabs>
       }
-      {!isSettingsOpen && widget && activePageId && (
-        <TitleEdgeSection widget={widget} activePageId={activePageId} updateWidget={updateWidget} />
-      )}
     </div>
     </ResizableColumn>
   );
@@ -4335,9 +4341,12 @@ function FrameSection({ style, patchStyle }: { style: WidgetStyle; patchStyle: (
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+// Every section sorts itself into a parameter tab (Widget / Look / Output)
+// from its heading — see modes/paramTabs.tsx. `tab` overrides the guess.
+function Section({ label, children, tab }: { label: string; children: React.ReactNode; tab?: ParamTab }) {
+  const hidden = useParamTab(label, tab);
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div hidden={hidden} style={{ marginBottom: 18 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-dim)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
         {label}
       </div>
@@ -4346,15 +4355,17 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function CollapsibleSection({ label, children, defaultOpen = false, proto = false }: {
+function CollapsibleSection({ label, children, defaultOpen = false, proto = false, tab }: {
   label: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
   proto?: boolean;   // a connection (OSC, Art-Net…): outlined in the interface colour, to find it at a glance
+  tab?: ParamTab;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const hidden = useParamTab(label, tab);
   return (
-    <div style={{ marginBottom: open ? 14 : 4 }}>
+    <div hidden={hidden} style={{ marginBottom: open ? 14 : 4 }}>
       <div
         style={{
           fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
@@ -5997,6 +6008,63 @@ function XYPresetBar({ widget, patch }: { widget: XYPadWidget; patch: (p: Partia
 }
 
 type ShellW = import('../../../../shared/types/project').ShellWidget;
+type StartupW = import('../../../../shared/types/project').StartupWidget;
+
+function StartupInspectorPanel({ widget, activePageId, updateWidget, updateWidgetRect }: {
+  widget: StartupW; activePageId: string; updateWidget: StoreState['updateWidget']; updateWidgetRect: StoreState['updateWidgetRect'];
+}) {
+  const patch = (p: Partial<StartupW>) => updateWidget(activePageId, widget.id, p as never);
+  const setTrig = (i: number, p: Partial<StartupW['triggers'][number]>) =>
+    patch({ triggers: widget.triggers.map((t, j) => (j === i ? { ...t, ...p } : t)) });
+  const [editing, setEditing] = useState<number | null>(null);
+  return (
+    <>
+      <div style={styles.header}>Startup</div>
+      <Section label="Label">
+        <input style={styles.input} value={widget.label} onChange={(e) => patch({ label: e.target.value })} />
+      </Section>
+      <PositionSection widget={widget} activePageId={activePageId} updateWidgetRect={updateWidgetRect} />
+      <Section label="Triggers">
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
+          When Live opens, each trigger pulses its output cell after its delay. Cable it (Shift) to a cue's GO, a sound, a Shell button… or give it an output below.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 64px 28px 28px', gap: '3px 4px', alignItems: 'center', fontSize: 11 }}>
+          <span style={{ color: 'var(--color-text-dim)' }}>Name</span>
+          <span style={{ color: 'var(--color-text-dim)' }}>Delay (s)</span>
+          <span /><span />
+          {widget.triggers.map((t, i) => (
+            <React.Fragment key={t.id}>
+              <input style={{ ...styles.input, padding: '3px 6px' }} value={t.label} onChange={(e) => setTrig(i, { label: e.target.value })} />
+              <NumberInput spinners={false} style={{ ...styles.input, padding: '3px 6px' }} min={0} max={86400} step={0.1}
+                value={t.delay} onChange={(v) => setTrig(i, { delay: Math.max(0, v) })} />
+              <button onClick={() => setEditing(editing === i ? null : i)} title="Output mapping (OSC / MIDI…)"
+                style={{ ...styles.input, padding: 0, cursor: 'pointer', textAlign: 'center', color: t.mapping ? 'var(--color-accent)' : undefined }}>⇢</button>
+              <button onClick={() => { useStore.getState().dropCellAndShiftLinks(widget.id, i); patch({ triggers: widget.triggers.filter((_, j) => j !== i) }); if (editing === i) setEditing(null); }}
+                title="Remove" style={{ ...styles.input, padding: 0, cursor: 'pointer', textAlign: 'center', color: '#c66' }}>✕</button>
+            </React.Fragment>
+          ))}
+        </div>
+        <button onClick={() => patch({ triggers: [...widget.triggers, { id: Math.random().toString(36).slice(2), label: `Trigger ${widget.triggers.length + 1}`, delay: widget.triggers.length ? (widget.triggers[widget.triggers.length - 1].delay + 5) : 0, mapping: null }] })}
+          style={{ ...styles.input, cursor: 'pointer', marginTop: 6 }}>＋ Trigger</button>
+      </Section>
+      {editing !== null && widget.triggers[editing] && (
+        <Section label={`Output · ${widget.triggers[editing].label || `trigger ${editing + 1}`}`} tab="Widget">
+          <MappingEditor mapping={widget.triggers[editing].mapping} onChange={(m) => setTrig(editing, { mapping: m })} />
+          <button onClick={() => setTrig(editing, { mapping: null })} style={{ ...styles.input, cursor: 'pointer', color: 'var(--color-text-dim)' }}>No output (cells only)</button>
+        </Section>
+      )}
+      <Section label="When">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={widget.everyLive ?? false} onChange={(e) => patch({ everyLive: e.target.checked })} />
+          Every time Live opens
+        </label>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 5, lineHeight: 1.5 }}>
+          Off: once per run of Maestrale — the show start, with "Start Maestrale with Windows" and "Open in Live mode at startup". ↺ on the widget arms it again by hand.
+        </div>
+      </Section>
+    </>
+  );
+}
 type PaletteW = import('../../../../shared/types/project').PaletteWidget;
 type MergeW = import('../../../../shared/types/project').MergeWidget;
 
@@ -6018,15 +6086,15 @@ function ShellInspectorPanel({ widget, activePageId, updateWidget, updateWidgetR
             <span style={{ width: 18, fontSize: 11, color: '#666' }}>{i + 1}</span>
             <button onClick={() => setEditing(i)} style={{ ...styles.input, flex: 1, textAlign: 'left', cursor: 'pointer' }}>
               {b.label || shellAction(b.action)?.name}
-              <span style={{ color: '#666', fontSize: 11 }}>{b.label !== shellAction(b.action)?.name ? ` · ${shellAction(b.action)?.name ?? b.action}` : ''}</span>
+              <span style={{ color: '#666', fontSize: 11 }}>{b.label !== shellAction(b.action)?.name ? ` · ${shellAction(b.action)?.name ?? b.action}` : ''}{shellDelayOf(b) > 0 ? ` · ${shellDelayOf(b)} s` : ''}</span>
             </button>
           </div>
         ))}
         <button onClick={() => { patch({ buttons: [...widget.buttons, { id: Math.random().toString(36).slice(2), label: 'Turn off PC', action: 'shutdown', delay: 10 }] }); setEditing(widget.buttons.length); }}
           style={{ ...styles.input, cursor: 'pointer' }}>＋ Button</button>
         <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginTop: 6, lineHeight: 1.5 }}>
-          Each button is also an input: Shift-drag a Clock row onto it to turn the PC off at a time. Turn off / restart count down first
-          (Cancel on the widget) and save where Maestrale is, so with "Start Maestrale with Windows" it comes back exactly as it was.
+          Each button is also an input: Shift-drag a Clock row onto it to turn the PC off at a time. Every button can wait a delay first
+          (it counts down on the widget, with Cancel); turn off / restart also save where Maestrale is, so with "Start Maestrale with Windows" it comes back exactly as it was.
         </div>
       </Section>
       {editing !== null && widget.buttons[editing] && (

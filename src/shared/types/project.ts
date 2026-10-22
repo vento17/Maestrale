@@ -35,7 +35,7 @@ export interface WidgetStyle {
 
 // ─── Widget Types ─────────────────────────────────────────────────────────────
 
-export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor' | 'encoder' | 'etc' | 'shell' | 'palette' | 'merge' | 'iControls';
+export type WidgetKind = 'sliderBank' | 'buttonGrid' | 'knobBank' | 'xyPad' | 'imageWidget' | 'textWidget' | 'stepSequencer' | 'graphWidget' | 'cues' | 'timeline' | 'spoutInput' | 'ndiInput' | 'submasters' | 'router' | 'autoBpm' | 'audioAnalyser' | 'soundPlayer' | 'lfoWidget' | 'mathWidget' | 'valueDisplay' | 'masterLevel' | 'instance' | 'keyboard' | 'manual' | 'dmxRecorder' | 'dmxPlayer' | 'audioLevel' | 'noiseWidget' | 'sketch' | 'clock' | 'dmxMonitor' | 'encoder' | 'etc' | 'shell' | 'palette' | 'merge' | 'iControls' | 'startup';
 
 // ─── Widget Base ──────────────────────────────────────────────────────────────
 
@@ -768,7 +768,24 @@ export type Widget =
   | ShellWidget
   | PaletteWidget
   | MergeWidget
-  | IControlsWidget;
+  | IControlsWidget
+  | StartupWidget;
+
+// ─── Startup ──────────────────────────────────────────────────────────────────
+// Fires triggers when the show starts: each one is an output cell that pulses
+// (1 then 0) `delay` seconds after Live opens — cable them to a cue's GO, a
+// sound, a Shell button, or give them an OSC / MIDI mapping of their own.
+export interface StartupTrigger {
+  id: string;
+  label: string;
+  delay: number;       // seconds after start
+  mapping: Mapping;    // optional: also sent on the wire
+}
+export interface StartupWidget extends WidgetBase {
+  kind: 'startup';
+  triggers: StartupTrigger[];
+  everyLive?: boolean; // fire again each time Live is entered (default: once per app run)
+}
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 // Buttons that run an action on the PC (turn off, restart, open a file…). Each
@@ -779,7 +796,7 @@ export interface ShellButton {
   label: string;
   action: string;      // SHELL_ACTIONS id
   arg?: string;        // path / address / command line
-  delay?: number;      // power actions: seconds of countdown (default 10)
+  delay?: number;      // seconds it waits before running, counting down with Cancel (power actions default 10, others 0)
 }
 export interface ShellWidget extends WidgetBase {
   kind: 'shell';

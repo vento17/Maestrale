@@ -1,27 +1,27 @@
-0.4.2 - OSC scale, Eos faders from any bank, Math takes any number of cables, a name on every widget
+0.4.3 - Live keeps its state, parameter tabs, Startup widget, a delay on every Shell button
 
-- OSC value scale: a fader at full can send 1, 10 or 100, as a float or as a
-  whole number. Range and Type sit in the Output protocol section for the whole
-  bank, and per cell in Edit cells. TouchDesigner wants 0-1 floats, a desk
-  0-100 ints, Resolume 0-100 - no more guessing
-- Eos faders from ordinary sliders, knobs and buttons: with OSC on, an "Eos
-  faders" section takes the desk number of the first fader (11 = page 2,
-  position 1) and the OSC bank; every cell follows. The address
-  /eos/fader/<bank>/<pos> and the bank config /eos/fader/<bank>/config/<page>/10
-  are written for you, cell by cell, and stay editable. Eos listens to a bank
-  only after that config, so it goes out by itself before the first level and
-  again every few seconds while you move; a button sends it now. A button
-  whose address is itself a config message sends it bare on press
-- Math: like the Merge, a dashed box that takes as many cables as you like -
-  Shift-drag onto it in Live and each cable becomes the next input. One cable
-  alone passes straight through, two add up, and so on; add, subtract (in 1
-  minus the rest), multiply, min, max, average, invert and abs work over all of
-  them. Source A / B remain as the fallback for in 1 / in 2. A Multiply field
-  scales the result after the ranges and the clamp: x100 sends 0-100
-- Every widget has a thin edge, in Design and in Live, with its own colour and
-  width. Show name widens the top edge into a title bar carrying the widget's
-  name, in the font size you set - a Title & edge section on every widget
-- Edit cells: changing an OSC address no longer wipes the cell's range, Eos
-  user and output - the field used to rebuild the mapping from scratch
+- Going to Edit and back no longer resets Live. Live used to be torn down
+  when you left it, so every LFO phase, timeline position and running sound
+  started over when you came back. It now stays mounted behind the editor:
+  the show keeps running while you edit, and everything is where you left it
+- Parameter tabs: a widget's parameters are split into Widget / Look / Output,
+  the same three on every widget, in Edit and in Live. No more scrolling past
+  position and colours to reach a setting. The tab you pick is remembered
+  from widget to widget; Live gets a Look tab of its own (name, title font,
+  edge, font size)
+- New Startup widget: fires triggers when the show starts, each one after
+  its own delay. Cable them with Shift to a cue's GO, a sound, a Shell
+  button, a timeline PLAY, or give a trigger its own OSC / MIDI / DMX output.
+  Once per run of Maestrale by default, or every time Live opens
+- Shell: every button can wait a delay before it runs, not only turn off and
+  restart. It counts down on the widget, with Cancel
+- Submasters: recording a scene puts its fader at full, so the look you just
+  stored stays up through it
+- Shift patching: the widgets keep their own look instead of going blank.
+  Every dot says what it is on hover, IN or OUT, including the free ones
+- Timeline: every track has its own output dot, on its row
+- A row's output dot (cues, sound tracks, timeline tracks, keys) is always on
+  its right, however tall the row is
+- New Maestrale logo
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

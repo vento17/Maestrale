@@ -12,7 +12,7 @@ const KIND_LABEL_PREFIX: Partial<Record<WidgetKind, string>> = {
   stepSequencer: 'seq', graphWidget: 'graph', cues: 'cues', timeline: 'timeline',
   spoutInput: 'spout', ndiInput: 'ndi', submasters: 'sub', router: 'router',
   imageWidget: 'image', textWidget: 'text', masterLevel: 'master', audioLevel: 'audio', noiseWidget: 'noise', sketch: 'sketch', instance: 'instance',
-  lfoWidget: 'lfo', mathWidget: 'math', encoder: 'encoder', iControls: 'icontrols', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge',
+  lfoWidget: 'lfo', mathWidget: 'math', encoder: 'encoder', iControls: 'icontrols', etc: 'etc', shell: 'shell', palette: 'palette', merge: 'merge', startup: 'startup',
   manual: 'manual', keyboard: 'keys', dmxRecorder: 'recorder', dmxPlayer: 'player', clock: 'clock', dmxMonitor: 'monitor',
 };
 

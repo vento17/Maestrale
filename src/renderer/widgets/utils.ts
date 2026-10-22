@@ -67,6 +67,7 @@ export function cellCount(widget: Widget): number {
     case 'dmxMonitor':     return 0;  // read-only view
     case 'encoder':        return 0;  // sends changes only — no value to link
     case 'shell':          return widget.buttons.length;      // input triggers
+    case 'startup':        return widget.triggers.length;     // one trigger output each
     case 'palette':        return 3 * widget.colors.length;   // R G B per colour
     case 'merge':          return Math.max(1, Math.min(16, widget.every || 1));
     case 'etc':            return 5;  // 2 masters + Grandmaster + GO + STOP

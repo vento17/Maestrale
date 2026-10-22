@@ -5,6 +5,7 @@ import LiveCanvas from './LiveCanvas';
 import LiveSidebar from './LiveSidebar';
 import RouterEngine from './RouterEngine';
 import ShellEngine from '../../widgets/Shell/ShellEngine';
+import { runStartup } from '../../widgets/Startup/startupRun';
 import { ClockEngine } from '../../widgets/Clock/ClockLive';
 import { startMergeEngine } from '../../widgets/Merge/mergeEngine';
 import MasterEngine from './MasterEngine';
@@ -58,14 +59,22 @@ export default function LiveMode(): React.JSX.Element {
     return () => window.removeEventListener('resize', computeScale);
   }, [computeScale]);
 
-  // ESC exits Live mode
+  // ESC exits Live mode. (Live stays mounted behind Design, so every listener
+  // here checks the mode first.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMode('design');
+      if (e.key === 'Escape' && useStore.getState().mode === 'live') setMode('design');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [setMode]);
+
+  // The Startup widget fires when Live OPENS — on each entry, not on mount,
+  // since Live is only mounted once.
+  const mode = useStore((s) => s.mode);
+  useEffect(() => {
+    if (mode === 'live') runStartup();
+  }, [mode]);
 
   if (!page) {
     return (

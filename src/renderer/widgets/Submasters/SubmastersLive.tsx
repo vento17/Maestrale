@@ -146,6 +146,11 @@ export default function SubmastersLive({ widget }: { widget: SubmastersWidget })
       useStore.getState().captureHistory();
       updateWidget(pid, widget.id, { scenes: newScenes } as never);
       setRecArmed(false);
+      // The scene now IS what is on stage, so its fader goes to full — the look
+      // stays up through this submaster from here on. The linked widgets already
+      // hold snapshot × 1, so nothing is pushed.
+      setCellValue(widget.id, sceneIdx, 1);
+      setLastTouchedScene(sceneIdx);
     } else {
       // del armed — clear snapshot
       const pid = useStore.getState().project.pages.find((p) => p.widgets.some((w) => w.id === widget.id))?.id;

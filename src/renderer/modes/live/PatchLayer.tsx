@@ -165,9 +165,11 @@ function measure(pending: PendingLink[] = []): Geometry {
       // Scrolled out of its widget (a long cue list): no dot.
       if (cx < box.left || cx > box.right || cy < box.top || cy > box.bottom) continue;
       const label = `${w.label} · ${cellLabel(w, i)}`;
-      // Tall enough → input on top, output at the bottom. A flat cell (a cue
-      // row, a sound track) has no room for that, so input left, output right.
-      const tall = r.height >= 30;
+      // A fader or a button (tall, or about square) → input on top, output at
+      // the bottom. A ROW (a cue, a sound track, a timeline track, a key: much
+      // wider than tall) → input at its left, output at its right, always,
+      // however tall the row is.
+      const tall = r.height >= 30 && r.width <= r.height * 2;
       if (isOut) push(g.outs, g.outByKey, { widgetId: w.id, cellIndex: i, label,
         x: tall ? cx : r.right - 8, y: tall ? r.bottom - 8 : cy });
       if (isIn) {
@@ -398,8 +400,8 @@ export default function PatchLayer(): React.JSX.Element | null {
 
   const showing = st.current.shift || !!st.current.cable;
 
-  // While patching, the widgets' own text goes away so the dots and cables
-  // read clearly (globals.css: .lf-patching).
+  // While patching the body carries .lf-patching; the widgets keep their look
+  // (the dots and cables are drawn over them).
   useEffect(() => {
     document.body.classList.toggle('lf-patching', showing);
     return () => document.body.classList.remove('lf-patching');
@@ -483,7 +485,8 @@ export default function PatchLayer(): React.JSX.Element | null {
         eat(e); reset(); return;
       }
       if (e.key === 'Shift') {
-        if (e.repeat || isTyping(e.target)) return;
+        // Live stays mounted behind Design: Shift there is the canvas's, not ours.
+        if (e.repeat || isTyping(e.target) || useStore.getState().mode !== 'live') return;
         s.held = true; s.used = false; s.latchedAtPress = s.latched;
         s.shift = true;
         force();
@@ -638,9 +641,14 @@ export default function PatchLayer(): React.JSX.Element | null {
   const hoverCut = !s.cable && !hoverOut ? hitCut(g, cables, s.pointer.x, s.pointer.y) : null;
   const cutCable = hoverCut?.kind === 'cable' ? hoverCut.cable.id : null;
   const cutInput = hoverCut?.kind === 'input' ? keyOf(hoverCut.ref) : null;
-  const tip = hoverPort?.label ?? hoverOut?.label
+  // A free blue dot under the mouse (no cable in hand, nothing to cut): still
+  // say what it is, so every dot tells its name on hover.
+  const hoverIn = !s.cable && !hoverOut && !hoverCut ? nearest(g.ins, s.pointer.x, s.pointer.y, HIT) : null;
+  const tip = (hoverPort ? `▸ IN  ${hoverPort.label}` : null)
+    ?? (hoverOut ? `◂ OUT  ${hoverOut.label}   ·   drag to patch` : null)
     ?? (hoverCut?.kind === 'cable' ? `${hoverCut.cable.label}   ·   double-click: unlink` : null)
-    ?? (hoverCut?.kind === 'input' ? `${describe(hoverCut.ref)}   ·   double-click: unlink` : null);
+    ?? (hoverCut?.kind === 'input' ? `▸ IN  ${describe(hoverCut.ref)}   ·   double-click: unlink` : null)
+    ?? (hoverIn ? `▸ IN  ${hoverIn.label}` : null);
 
 
   return createPortal(
@@ -677,7 +685,7 @@ export default function PatchLayer(): React.JSX.Element | null {
 
         {g.ins.map((p) => {
           const k = keyOf(p);
-          const hot = hoverPort && keyOf(hoverPort) === k;
+          const hot = (hoverPort && keyOf(hoverPort) === k) || (hoverIn && keyOf(hoverIn) === k);
           const done = linkedTargets.has(k) || existingTargets.has(k);
           const remote = remoteTargets.has(k);
           const cutting = cutInput === k;

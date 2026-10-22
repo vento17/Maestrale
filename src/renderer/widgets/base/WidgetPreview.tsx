@@ -37,6 +37,7 @@ import ValueDisplayDesign from '../ValueDisplay/ValueDisplayDesign';
 import ShellLive from '../Shell/ShellLive';
 import PaletteLive from '../Palette/PaletteLive';
 import MergeLive from '../Merge/MergeLive';
+import StartupLive from '../Startup/StartupLive';
 
 export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX.Element {
   const inner = (() => {
@@ -77,6 +78,7 @@ export default function WidgetPreview({ widget }: { widget: Widget }): React.JSX
       case 'shell':            return <ShellLive preview widget={widget} />;
       case 'palette':          return <PaletteLive preview widget={widget} />;
       case 'merge':            return <MergeLive preview widget={widget} />;
+      case 'startup':          return <StartupLive preview widget={widget} />;
       default:                 return null;
     }
   })();

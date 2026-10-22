@@ -52,6 +52,7 @@ export function cellLabel(w: Widget | undefined, cellIndex: number): string {
   if (w.kind === 'mathWidget') return 'result';
   if (w.kind === 'etc') return ['Master 1', 'Master 2', 'Grandmaster', 'GO', 'STOP'][cellIndex] ?? `#${cellIndex + 1}`;
   if (w.kind === 'shell') return w.buttons[cellIndex]?.label || `#${cellIndex + 1}`;
+  if (w.kind === 'startup') { const t = w.triggers[cellIndex]; return t ? `${t.label || `trig ${cellIndex + 1}`} +${t.delay}s` : `#${cellIndex + 1}`; }
   if (w.kind === 'palette') return `${Math.floor(cellIndex / 3) + 1} ${'RGB'[cellIndex % 3]}`;
   if (w.kind === 'merge') return String(cellIndex + 1);
   if (w.kind === 'masterLevel') return 'level';

@@ -640,11 +640,21 @@ export const WIDGET_ENTRIES: ManualEntry[] = [
     ],
   },
   {
+    id: 'w-startup', tab: 'Startup', title: 'Startup',
+    intro: 'Fires triggers when the show starts — each one after its own delay.',
+    items: [
+      ['Triggers', 'One row per trigger, with a name and a delay in seconds. When Live opens, each one pulses its output cell (1 then 0) after its delay: cable it with Shift to a cue\'s GO, a sound track, a Shell button, a timeline PLAY… ＋ Trigger adds one.'],
+      ['Output', '⇢ gives a trigger its own OSC / MIDI / DMX mapping too, sent 1 then 0 with the pulse.'],
+      ['When', 'Once per run of Maestrale by default — the real show start, with Start Maestrale with Windows and Open in Live mode at startup. "Every time Live opens" fires it on each entry into Live instead.'],
+      ['In Live', 'Each row shows its countdown, then ✓. Tap a row to fire it now; ↺ arms the whole widget again from now.'],
+    ],
+  },
+  {
     id: 'w-shell', tab: 'Shell', title: 'Shell',
     intro: 'Buttons that act on the computer: turn off, restart, sleep, lock, turn off screens, close / restart Maestrale, open a file, folder or web page, close a program, or any command line.',
     items: [
-      ['Tap', 'Runs it. Turn off, restart and sign out count down first (10 s, set per button): tap again or Cancel to stop.'],
-      ['Hold / right-click', 'Edits the button: type the action ("turn off") or pick it from the list by name, its path / address if it needs one, the countdown, the name.'],
+      ['Tap', 'Runs it, after its delay: every button can wait first (turn off, restart and sign out default to 10 s, the rest to 0), counting down on the widget — tap again or Cancel to stop.'],
+      ['Hold / right-click', 'Edits the button: type the action ("turn off") or pick it from the list by name, its path / address if it needs one, the delay, the name.'],
       ['＋', 'Adds a button.'],
       ['Inputs', 'Each button is an input: Shift-drag a Clock row onto it — the PC turns off at 23:00. Works whatever page is showing.'],
       ['Comes back as it was', 'Before turning off it saves where Maestrale is. With Settings → Start Maestrale with Windows, the next morning it opens the same project, as it was, connected, in Live.'],

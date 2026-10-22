@@ -54,6 +54,7 @@ const WIDGET_GROUPS: { title: string; col?: number; items: WidgetOption[] }[] = 
     { kind: 'mathWidget',    label: 'Math / Merge',   description: 'Combine any number of cabled inputs with add, subtract, multiply, min, max, avg, invert; then multiply the result (×100…).' },
     { kind: 'merge',         label: 'Merge',          description: 'Drop as many cables as you like on its box; merges them in groups (3 = R G B) HTP, LTP, lowest or average, with a smooth glide.' },
     { kind: 'shell',         label: 'Shell',          description: 'Buttons that act on the PC: turn off, restart, sleep, open a file or web page, a command. Inputs: fire them from a clock row.' },
+    { kind: 'startup',       label: 'Startup',        description: 'Fires triggers when the show starts, each after its own delay: cable them to a cue, a sound, a Shell button, or give them an OSC / MIDI output.' },
     { kind: 'instance',      label: 'Instance',       description: 'Bound copy of another widget — shares the exact same value across pages.' },
   ] },
   { title: 'Sound', col: 4, items: [

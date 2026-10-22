@@ -117,7 +117,7 @@ export function ShellButtonEditor({ button, onChange, onRemove, onClose }: {
   const pick = (id: string) => {
     const d = shellAction(id);
     const wasDefaultLabel = !button.label || SHELL_ACTIONS.some((a) => a.name === button.label);
-    onChange({ ...button, action: id, label: wasDefaultLabel ? d?.name ?? button.label : button.label, delay: d?.power ? (button.delay ?? 10) : button.delay });
+    onChange({ ...button, action: id, label: wasDefaultLabel ? d?.name ?? button.label : button.label, delay: button.delay ?? (d?.power ? 10 : 0) });
     setQ('');
   };
   return createPortal(
@@ -148,12 +148,10 @@ export function ShellButtonEditor({ button, onChange, onRemove, onClose }: {
               placeholder={button.action === 'openUrl' ? 'https://…' : button.action === 'killProcess' ? 'chrome.exe' : button.action === 'custom' ? 'e.g. start "" "C:\\Shows\\intro.mp4"' : 'C:\\…'} />
           </label>
         )}
-        {def?.power && (
-          <label style={{ fontSize: 11, color: '#888' }}>Countdown before it happens (s) — 0 = at once
-            <input className="lf-no-spin" type="number" min={0} max={600} style={{ ...inp, marginTop: 4, width: 120 }} value={button.delay ?? 10}
-              onChange={(e) => onChange({ ...button, delay: Math.max(0, Math.min(600, Math.round(Number(e.target.value) || 0))) })} />
-          </label>
-        )}
+        <label style={{ fontSize: 11, color: '#888' }}>Delay before it happens (s) — 0 = at once; it counts down on the widget, with Cancel
+          <input className="lf-no-spin" type="number" min={0} max={600} style={{ ...inp, marginTop: 4, width: 120 }} value={button.delay ?? (def?.power ? 10 : 0)}
+            onChange={(e) => onChange({ ...button, delay: Math.max(0, Math.min(600, Math.round(Number(e.target.value) || 0))) })} />
+        </label>
         <label style={{ fontSize: 11, color: '#888' }}>Name on the button
           <input style={{ ...inp, marginTop: 4 }} value={button.label} onChange={(e) => onChange({ ...button, label: e.target.value })} />
         </label>

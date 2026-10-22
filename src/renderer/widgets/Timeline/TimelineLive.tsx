@@ -1224,8 +1224,10 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
         }
       }
     }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Live stays mounted behind Design: its shortcuts only count while Live shows.
+    const onKeyLive = (e: KeyboardEvent): void => { if (useStore.getState().mode === 'live') onKey(e); };
+    window.addEventListener('keydown', onKeyLive);
+    return () => window.removeEventListener('keydown', onKeyLive);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2366,7 +2368,7 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
 
           {/* Track labels */}
           <div className="tl-lbl" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
-            {widget.tracks.map((t) => {
+            {widget.tracks.map((t, ti) => {
               const tH = trackHeights.get(t.id) ?? TRACK_H;
               return (
                 <div key={t.id}
@@ -2385,6 +2387,10 @@ export default function TimelineLive({ widget }: { widget: TimelineWidget }): Re
                     title={t.muted ? 'Unmute' : 'Mute'}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', fontSize: 8, fontWeight: 700, color: t.muted ? pal('#e08b40') : '#282828', flexShrink: 0, lineHeight: 1, fontFamily: 'inherit' }}
                   >M</button>
+                  {/* Output dot anchor: cell ti is this track's value, so Shift
+                      patching puts its orange dot right here, on the row. */}
+                  <span data-lf-widget={widget.id} data-lf-cell={ti}
+                    style={{ width: 16, height: 16, flexShrink: 0, pointerEvents: 'none' }} />
                   {/* Vertical resize handle */}
                   <div
                     style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 5, cursor: 'ns-resize', zIndex: 5 }}

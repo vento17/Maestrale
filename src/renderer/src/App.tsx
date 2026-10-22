@@ -17,6 +17,10 @@ import CrashScreen from '../modes/CrashScreen';
 export default function App(): React.JSX.Element {
   const mode    = useMode();
   const project = useProject();
+  // Has Live been opened in this run? From then on it stays mounted (hidden
+  // behind Design), so nothing in it resets when you go to Edit and back.
+  const [liveEver, setLiveEver] = React.useState(mode === 'live');
+  useEffect(() => { if (mode === 'live') setLiveEver(true); }, [mode]);
   // A palette change redraws the interface: everything below is re-mounted
   // (as switching mode already does) — except Recovery, which opens projects.
   const pv = useSyncExternalStore(onPalette, paletteVersion);
@@ -144,10 +148,26 @@ export default function App(): React.JSX.Element {
       <LearnModeLayer key={`lm${pv}`} />
       {/* Only the mode content is wrapped: a crash in a widget must not take the
           top bar with it, or there is no way to save what survived. */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        <CrashScreen key={`${mode}:${pv}`}>
-          {mode === 'design' ? <DesignMode /> : <LiveMode />}
-        </CrashScreen>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {/* Live stays mounted once it has been opened: going to Edit hides it
+            instead of tearing it down, so every fader, LFO phase, timeline
+            position and running sound is exactly where you left it when you
+            come back — the show keeps running behind the editor. Design is
+            mounted only while editing. */}
+        {mode === 'design' && (
+          <CrashScreen key={`design:${pv}`}>
+            <DesignMode />
+          </CrashScreen>
+        )}
+        {liveEver && (
+          <div aria-hidden={mode !== 'live'} style={mode === 'live'
+            ? { position: 'absolute', inset: 0 }
+            : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none', zIndex: -1 }}>
+            <CrashScreen key={`live:${pv}`}>
+              <LiveMode />
+            </CrashScreen>
+          </div>
+        )}
       </div>
       <RouterPage key={`rp${pv}`} />
       <Recovery />
