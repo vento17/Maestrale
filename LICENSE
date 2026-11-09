@@ -1,0 +1,43 @@
+Maestrale — Freeware License
+Copyright (C) 2026 Luca Lorenzo Ferro — Ventoland (ventoland.it). All rights reserved.
+
+This applies to Maestrale version 0.4.4 and later.
+
+1. Free use. You may download, install and use Maestrale free of charge, for
+   any purpose, personal or commercial, including live shows, installations
+   and touring, on as many computers as you like.
+
+2. Free redistribution of the unmodified installer. You may share the
+   official, unmodified download files (the Windows .exe and the macOS .dmg),
+   free of charge, as long as this license comes with them. You may not sell
+   them or bundle them with something you sell.
+
+3. What you may not do. You may not decompile, disassemble, reverse-engineer,
+   modify, translate or create derivative works of Maestrale, except where the
+   law of your country expressly allows it despite this restriction. You may
+   not remove or change the name, logo, copyright notices or this license.
+
+4. Ownership. Maestrale, its source code, its name and its logo remain the
+   property of Luca Lorenzo Ferro (Ventoland). This license gives you the right to use the program;
+   it does not transfer any ownership.
+
+5. Your shows and files are yours. Projects, recordings and everything else
+   you create with Maestrale belong to you.
+
+6. Third-party components. Maestrale includes open-source components (among
+   them Electron, React, zustand, ws, osc, numpy, Pillow) under their own
+   licenses (MIT, BSD, ISC, Apache-2.0 and similar). Those licenses apply to
+   those components and are not limited by this one. The NDI runtime is not
+   included and is installed separately under NewTek/Vizrt's own terms.
+
+7. No warranty. Maestrale is provided "as is", without warranty of any kind,
+   express or implied, including fitness for a particular purpose. Test your
+   show before you run it.
+
+8. Limitation of liability. To the extent permitted by law, Luca Lorenzo Ferro (Ventoland) is not
+   liable for any damage, data loss, missed cue, interrupted show or other
+   loss arising from the use of, or inability to use, Maestrale.
+
+9. Earlier versions. Versions up to and including 0.4.3 were published under
+   the GNU General Public License v3.0. Copies of those versions obtained under
+   that license remain under it; this license applies to 0.4.4 and later.
