@@ -14,9 +14,10 @@ Made by [Ventoland](https://ventoland.it).
 
 ## What it does
 
-**Build** — Design mode is a canvas: drop widgets, size them, name them, give
-them colours. Live mode is the show: the same page, now playable, with a Look
-tab to restyle any widget without leaving the show.
+**Build** — one view, two modes. DESIGN lays frames over the page: drop
+widgets, move and resize them, copy, paste, undo. LIVE plays them. The page
+looks exactly the same in both, and switching never stops the show. The
+parameters column on the right (P) is the same in both modes.
 
 **Patch** — Tap **Shift** and every control grows dots: orange for what it
 sends, blue for what can drive it. Drag a cable from one to the other and it is
@@ -47,19 +48,19 @@ scrubbed, on another universe.
 starts, each after its own delay; a **Shell** widget runs actions on the PC
 (turn off, restart, open a file) and can shut it down from a Clock row.
 
-### New in 0.4.4
+### New in 0.4.5
 
-- **Timeline cue tracks drive Cues widgets**: entering block N fires cue N —
-  on every Cues widget, on one, or off. Plug the track into a Cues widget's
-  master dot with Shift to pick it.
-- **Drag cue boundaries** on the timeline; every new cue block gets its own colour.
-- **Value tracks** work in 0–1, 0–10, 0–100 or 0–1000.
-- Every trig marker and cue block has its **own patch dot**.
-- New **OSC Monitor** and **MIDI Monitor** widgets.
-- sACN DMX Monitor joins the multicast group of the universe it shows by itself.
-- **Name and edge** of every widget editable the same way in Design and Live,
-  with edge colour; the widget name on the edge shows again.
-- Sound-track cuts no longer look like two cuts.
+- **SETTINGS · DESIGN · LIVE**: Design is the Live page with frames to move and
+  resize widgets (the snap grid behind them); Live plays. One view, so what
+  you arrange is exactly what plays.
+- **One parameters column** in both modes — **P** or the arrow — with a big
+  **EDIT** button for cell names / colours / mappings (and a submaster's scenes).
+- **Wire** button next to it: the patch cables, the same as a tap on Shift.
+- Every widget starts with its **Label** and labels are unique (Lights,
+  Lights 2…); cables follow the widget, never its name.
+- **Palette SELECTED output**: the picked colour's R G B on one dot — one cable
+  into a Merge.
+- Tested core (181 automatic tests run before every build).
 
 ## Download
 
